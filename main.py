@@ -4,7 +4,7 @@ from datetime import datetime
 
 from astrbot.api import FunctionTool as _FT, logger, star
 from astrbot.api.star import StarTools
-
+from astrbot.api.event import filter, AstrMessageEvent
 
 _VS = {"pending", "in_progress", "completed", "cancelled"}
 
@@ -302,7 +302,6 @@ class TaskListTool(_FT):
         try:
             active = _is_active()
             if action == "status":
-                _log_activity("read", "task_list status 查询")
                 if not active:
                     return json.dumps({"ok": True, "status": "idle", "summary": "IDLE — 无活跃任务"}, ensure_ascii=False)
                 sp = os.path.join(_cur(), "00_task_state.json")
@@ -313,7 +312,6 @@ class TaskListTool(_FT):
                            status="active", slug=st.get("slug"))
 
             if action == "start":
-                _log_activity("exec", f"task_list start: {len(todos)} tasks")
                 if active:
                     return _err("已有活跃任务，请先 complete 或清空后重试")
                 if not todos:
@@ -327,7 +325,6 @@ class TaskListTool(_FT):
                            files=fs, action="workspace_created", slug=slug)
 
             if action == "update":
-                _log_activity("exec", f"task_list update: {len(todos)} tasks")
                 if not todos:
                     return _err("update 需要提供 todos 列表")
                 e = _validate(todos)
@@ -348,7 +345,6 @@ class TaskListTool(_FT):
                 return _ok(todos, summary=_summary(todos), workspace="task_scaffolds/current/", action="state_updated")
 
             if action == "complete":
-                _log_activity("exec", "task_list complete — 生成汇报中")
                 if not active:
                     return _err("无活跃任务")
                 sp = os.path.join(_cur(), "00_task_state.json")
@@ -445,13 +441,28 @@ class TaskArchiveTool(_FT):
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-def _log_activity(typ: str, detail: str, agent: str = "Agent"):
+def _log_activity(agent: str, status: str, detail: str, tool: str = None, task_summary: str = None):
     state_dir = os.path.join(_root(), "state")
     os.makedirs(state_dir, exist_ok=True)
-    entry = json.dumps({"ts": datetime.now().strftime("%H:%M:%S"), "type": typ, "agent": agent, "detail": detail},
-                       ensure_ascii=False)
-    with open(os.path.join(state_dir, "activity.jsonl"), "a", encoding="utf-8") as f:
-        f.write(entry + "\n")
+    entry = {"ts": datetime.now().strftime("%H:%M:%S"), "agent": agent, "status": status,
+             "detail": detail, "tool": tool, "task_summary": task_summary}
+    fp = os.path.join(state_dir, "activity.jsonl")
+    with open(fp, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    _trim_line_file(fp, 200)
+
+
+def _trim_line_file(fp: str, max_lines: int):
+    if not os.path.exists(fp):
+        return
+    try:
+        with open(fp, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except Exception:
+        lines = []
+    if len(lines) > max_lines:
+        with open(fp, "w", encoding="utf-8") as f:
+            f.writelines(lines[-max_lines:])
 
 
 def _load_dashboard():
@@ -548,13 +559,29 @@ def _register_routes(context):
                         pass
         return jsonify(lines[-20:])
 
-    context.register_web_api("/task_scaffold/dashboard", dashboard, ["GET"], "任务工作台 HTML")
-    context.register_web_api("/task_scaffold/api/current", api_current, ["GET"], "当前任务 JSON")
-    context.register_web_api("/task_scaffold/api/current/file/<name>", api_current_file, ["GET"], "当前任务文件内容")
-    context.register_web_api("/task_scaffold/api/archives", api_archives, ["GET"], "归档列表 JSON")
-    context.register_web_api("/task_scaffold/api/activity", api_activity, ["GET"], "实时活动 JSONL")
-    context.register_web_api("/task_scaffold/api/archive/<slug>/summary", api_archive_summary, ["GET"], "归档摘要 JSON")
-    context.register_web_api("/task_scaffold/api/archive/<slug>/file/<name>", api_archive_file, ["GET"], "归档文件内容")
+    _ROUTES = [
+        ("/task_scaffold/dashboard", dashboard, ["GET"], "任务工作台 HTML"),
+        ("/task_scaffold/api/current", api_current, ["GET"], "当前任务 JSON"),
+        ("/task_scaffold/api/current/file/<name>", api_current_file, ["GET"], "当前任务文件内容"),
+        ("/task_scaffold/api/archives", api_archives, ["GET"], "归档列表 JSON"),
+        ("/task_scaffold/api/activity", api_activity, ["GET"], "实时活动 JSONL"),
+        ("/task_scaffold/api/archive/<slug>/summary", api_archive_summary, ["GET"], "归档摘要 JSON"),
+        ("/task_scaffold/api/archive/<slug>/file/<name>", api_archive_file, ["GET"], "归档文件内容"),
+    ]
+
+    for path, handler, methods, desc in _ROUTES:
+        context.register_web_api(path, handler, methods, desc)
+
+    try:
+        app = getattr(context, 'app', None) or getattr(context, '_app', None) or getattr(context, 'web_app', None)
+        if app:
+            for path, handler, methods, desc in _ROUTES:
+                app.add_url_rule(path, path.replace("/", "_"), handler, methods=methods)
+            logger.info(f"已通过 Quart app 注册 {len(_ROUTES)} 条路由")
+    except Exception:
+        pass
+
+    logger.info(f"WebUI 路由已注册: {' | '.join(p for p,_,_,_ in _ROUTES)}")
 
 
 class Main(star.Star):
@@ -563,3 +590,24 @@ class Main(star.Star):
         context.add_llm_tools(TaskListTool(), TaskArchiveTool())
         _register_routes(context)
         logger.info("irmia_task_scaffold 已就绪 — task_list + task_archive + WebUI 仪表盘")
+
+    @filter.on_using_llm_tool()
+    async def _on_tool_call(self, event: AstrMessageEvent, tool, tool_args):
+        name = tool.name if hasattr(tool, "name") else str(tool)
+        detail = str(tool_args)[:80] if isinstance(tool_args, dict) else ""
+        ts = ""
+        if name == "task_list":
+            act = tool_args.get("action", "") if isinstance(tool_args, dict) else ""
+            if act == "complete":
+                ts = "任务完成汇报"
+            elif act == "start":
+                ts = f"启动 {len(tool_args.get('todos',[]))} 项任务" if isinstance(tool_args, dict) else ""
+        _log_activity("Miria", "执行中", f"调用 {name}" if not ts else ts, tool=name, task_summary=detail)
+
+    @filter.on_llm_response()
+    async def _on_response(self, event: AstrMessageEvent, resp):
+        _log_activity("Miria", "回复中", "打字中…")
+
+    @filter.on_agent_done()
+    async def _on_done(self, event: AstrMessageEvent, run_context, resp):
+        _log_activity("Miria", "待命中", "—")

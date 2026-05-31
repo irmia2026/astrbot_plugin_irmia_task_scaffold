@@ -220,14 +220,13 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </div>
 
 <script>
-const API='/task_scaffold/api';
-const FILE_ICONS={'01_research.md':'','02_design.md':'','03_work_order.md':'','00_task_state.json':'','progress.log':''};
+var API='/api/plug/task_scaffold/api';
 let ST={current:null,archives:[],activeCat:'all',files:{},lastActivity:0,_cacheAct:'',_cacheCur:''};
 
-async function get(path){const r=await fetch(API+path);return r.json();}
-async function getText(path){const r=await fetch(API+path);return r.text();}
+async function get(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__'){if(path==='/current')return E.current;if(path==='/archives')return E.archives;if(path==='/activity')return E.activity||[];return{};}const r=await fetch(API+path);if(!r.ok)console.warn('API '+path+' → '+r.status);return r.json();}
+async function getText(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '(离线)';const r=await fetch(API+path);return r.text();}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
-function ts(){const t=new Date();return t.toTimeString().slice(0,8);}
+function ts(){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '离线快照';const t=new Date();return t.toTimeString().slice(0,8);}
 
 function switchView(v){
   const cur=v==='current';
@@ -251,11 +250,11 @@ function _skelArchive(){return Array(2).fill('<div style="padding:8px 18px"><div
 function _animPct(el,tgt){let cur=0;const step=()=>{cur=Math.min(cur+Math.ceil((tgt-cur)/6),tgt);el.textContent=cur+'%';if(cur<tgt)requestAnimationFrame(step)};step()}
 
 async function loadCurrent(){
-  try{const cur=await get('/current');}catch(e){return;}
+  let cur;
+  try{cur=await get('/current');}catch(e){return;}
   const curStr=JSON.stringify(cur);
   if(curStr===ST._cacheCur)return;
-  ST._cacheCur=curStr;
-  ST.current=cur;
+  ST._cacheCur=curStr;ST.current=cur;
   const tbody=document.getElementById('task-body');
   const thead=document.getElementById('task-header');
   tbody.innerHTML=_skelTask();
@@ -374,20 +373,16 @@ async function loadActivity(){
     const lb=document.getElementById('live-body');
     let h='';
     acts.forEach(a=>{
-      h+='<div class="live-row"><span class="lr-ts">'+(a.ts||'').slice(0,8)+'</span><span class="lr-dot '+esc(a.type||'')+'"></span><div class="lr-body"><span class="lr-agent">'+(a.agent||'')+'</span> <span class="lr-detail">'+esc(a.detail||'')+'</span></div></div>';
+      const st=(a.status||'');const cls=st==='执行中'?'exec':st==='回复中'?'reply':st==='待命中'?'think':st==='阅读中'?'read':'think';
+      h+='<div class="live-row"><span class="lr-ts">'+(a.ts||'').slice(0,8)+'</span><span class="lr-dot '+cls+'"></span><div class="lr-body"><span class="lr-agent">'+(a.agent||'')+'</span> <span class="lr-detail">'+esc(a.detail||'')+'</span></div></div>';
     });
-    const isFresh=acts.length&&(acts[0].ts!==ST.lastActivity);
-    ST.lastActivity=acts[0]?acts[0].ts:ST.lastActivity;
-    if(isFresh||!lb.children.length||lb.querySelector('.empty-state')){
-      lb.innerHTML=h||'<div class="empty-state"><div class="empty-box"></div><h4>等待活动...</h4></div>';
-    }
+    lb.innerHTML=h||'<div class="empty-state"><div class="empty-box"></div><h4>等待活动...</h4></div>';
   }catch(e){}
 }
 
 setInterval(()=>{
   document.getElementById('nav-time').textContent=' · '+ts();
-  loadCurrent();
-  loadActivity();
+  if(typeof E==='undefined'||API!=='__EMBEDDED__'){loadCurrent();loadActivity();}
 },3000);
 
 loadCurrent();
