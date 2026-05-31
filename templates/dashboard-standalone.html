@@ -225,7 +225,7 @@ const E={"current": {"active": true, "slug": "2026-05-31_REV-008", "tags": ["dev
 <script>
 var API='__EMBEDDED__';
 const FILE_ICONS={'01_research.md':'','02_design.md':'','03_work_order.md':'','00_task_state.json':'','progress.log':''};
-let ST={current:null,archives:[],activeCat:'all',files:{},lastActivity:0};
+let ST={current:null,archives:[],activeCat:'all',files:{},lastActivity:0,_cacheAct:'',_cacheCur:''};
 
 async function get(path){if(API==='__EMBEDDED__'){const m={'/current':E.current,'/archives':E.archives,'/activity':E.activity};if(m[path])return m[path];return{};}const r=await fetch(API+path);return r.json();}
 async function getText(path){if(API==='__EMBEDDED__')return'(离线)';const r=await fetch(API+path);return r.text();}
@@ -254,10 +254,14 @@ function _skelArchive(){return Array(2).fill('<div style="padding:8px 18px"><div
 function _animPct(el,tgt){let cur=0;const step=()=>{cur=Math.min(cur+Math.ceil((tgt-cur)/6),tgt);el.textContent=cur+'%';if(cur<tgt)requestAnimationFrame(step)};step()}
 
 async function loadCurrent(){
+  try{const cur=await get('/current');}catch(e){return;}
+  const curStr=JSON.stringify(cur);
+  if(curStr===ST._cacheCur)return;
+  ST._cacheCur=curStr;
+  ST.current=cur;
   const tbody=document.getElementById('task-body');
   const thead=document.getElementById('task-header');
   tbody.innerHTML=_skelTask();
-  try{ST.current=await get('/current');}catch(e){return;}
   if(!ST.current.active){
     thead.textContent='当前任务';
     tbody.innerHTML='<div class="empty-state"><div class="empty-house"></div><h4>无活跃任务</h4><p>对 Agent 说要做什么即可</p></div>';
@@ -315,8 +319,8 @@ async function selectFile(name){
 }
 
 async function loadArchives(){
-  document.getElementById('archive-list').innerHTML=_skelArchive();
   try{ST.archives=await get('/archives')||[];}catch(e){return;}
+  document.getElementById('archive-list').innerHTML=_skelArchive();
   document.getElementById('archive-badge').textContent=ST.archives.length;
   const tags={};
   ST.archives.forEach(a=>{(a.tags||[]).forEach(t=>{tags[t]=(tags[t]||0)+1})});
@@ -367,6 +371,9 @@ async function loadActivity(){
   try{
     const acts=await get('/activity');
     if(!acts||!acts.length) return;
+    const actStr=JSON.stringify(acts);
+    if(actStr===ST._cacheAct)return;
+    ST._cacheAct=actStr;
     const lb=document.getElementById('live-body');
     let h='';
     acts.forEach(a=>{
@@ -380,11 +387,12 @@ async function loadActivity(){
   }catch(e){}
 }
 
-setInterval(()=>{
+if(API!=='__EMBEDDED__')setInterval(()=>{
   document.getElementById('nav-time').textContent=' · '+ts();
   loadCurrent();
   loadActivity();
 },3000);
+else{document.getElementById('nav-time').textContent=' · 离线快照';}
 
 loadCurrent();
 loadArchives();
