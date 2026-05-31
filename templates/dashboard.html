@@ -144,10 +144,12 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 @keyframes todoDone{0%{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 @keyframes pctBounce{0%{transform:translate(-50%,-50%) scale(.6);opacity:0}60%{transform:translate(-50%,-48%) scale(1.08)}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-12px);max-height:0}to{opacity:1;transform:translateX(0);max-height:40px}}
 .pct.anim{animation:pctBounce .5s var(--spring)}
 .todo-item.done{animation:todoDone .35s var(--ease)}
 .panel.fade{animation:fadeIn .25s var(--ease)}
 .file-preview-body.fade{animation:fadeIn .2s var(--ease)}
+.live-row.slide-in{animation:slideIn .3s var(--ease)}
 .skeleton{background:linear-gradient(90deg,var(--border) 25%,#f0ece6 50%,var(--border) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:6px}
 .skel-bar{height:14px;margin-bottom:8px;border-radius:6px}
 .skel-circle{width:48px;height:48px;border-radius:50%}
@@ -221,10 +223,10 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 <script>
 var API='/api/plug/task_scaffold/api';
-let ST={current:null,archives:[],activeCat:'all',files:{},lastActivity:0,_cacheAct:'',_cacheCur:''};
+let ST={current:null,archives:[],activeCat:'all',files:{},_cacheAct:'',_cacheCur:''},_rendered=new Set();
 
-async function get(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__'){if(path==='/current')return E.current;if(path==='/archives')return E.archives;if(path==='/activity')return E.activity||[];return{};}const r=await fetch(API+path);if(!r.ok)console.warn('API '+path+' → '+r.status);return r.json();}
-async function getText(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '(离线)';const r=await fetch(API+path);return r.text();}
+async function get(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__'){if(path==='/current')return E.current;if(path==='/archives')return E.archives;if(path==='/activity')return E.activity||[];return{};}try{const r=await fetch(API+path);if(!r.ok){console.warn('API '+path+' → '+r.status);return path==='/activity'||path==='/archives'?[]:null;}const t=await r.text();try{return JSON.parse(t);}catch(e){console.warn('JSON parse failed '+path,t.slice(0,60));return path==='/activity'||path==='/archives'?[]:null;}}catch(e){console.warn('Fetch '+path,e);return path==='/activity'||path==='/archives'?[]:null;}}
+async function getText(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '(离线)';try{const r=await fetch(API+path);return r.text();}catch(e){return '(无法加载)'};}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 function ts(){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '离线快照';const t=new Date();return t.toTimeString().slice(0,8);}
 
@@ -371,12 +373,16 @@ async function loadActivity(){
     if(actStr===ST._cacheAct)return;
     ST._cacheAct=actStr;
     const lb=document.getElementById('live-body');
+    const fresh=acts.filter(a=>{const key=a.ts+'|'+(a.detail||'');if(_rendered.has(key))return false;_rendered.add(key);return true;});
+    if(!fresh.length) return;
     let h='';
-    acts.forEach(a=>{
+    fresh.forEach(a=>{
       const st=(a.status||'');const cls=st==='执行中'?'exec':st==='回复中'?'reply':st==='待命中'?'think':st==='阅读中'?'read':'think';
-      h+='<div class="live-row"><span class="lr-ts">'+(a.ts||'').slice(0,8)+'</span><span class="lr-dot '+cls+'"></span><div class="lr-body"><span class="lr-agent">'+(a.agent||'')+'</span> <span class="lr-detail">'+esc(a.detail||'')+'</span></div></div>';
+      h+='<div class="live-row slide-in"><span class="lr-ts">'+(a.ts||'').slice(0,8)+'</span><span class="lr-dot '+cls+'"></span><div class="lr-body"><span class="lr-agent">'+(a.agent||'')+'</span> <span class="lr-detail">'+esc(a.detail||'')+'</span></div></div>';
     });
-    lb.innerHTML=h||'<div class="empty-state"><div class="empty-box"></div><h4>等待活动...</h4></div>';
+    if(h) lb.insertAdjacentHTML('afterbegin', h);
+    if(lb.querySelector('.empty-state')) lb.innerHTML='';
+    if(_rendered.size>500){const arr=[..._rendered];_rendered=new Set(arr.slice(-300));}
   }catch(e){}
 }
 
