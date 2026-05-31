@@ -144,8 +144,8 @@ def _update_state(todos):
     ch = []
     for i, t in enumerate(todos):
         if i < len(old) and old[i].get("status") != t.get("status"):
-            oc = old[i].get("content", f"#{i+1}")[:30]
-            ch.append(f"#{i+1}({oc}) {old[i].get('status')}→{t.get('status')}")
+            oc = old[i].get("content", f"#{i+1}")
+            ch.append(f"#{i+1}({oc[:30]}) {old[i].get('status')}→{t.get('status')}")
     state["todos"] = todos
     state["updated_at"] = now
     with open(sp, "w", encoding="utf-8") as f:
@@ -158,7 +158,7 @@ def _update_state(todos):
 
 
 def _gen_report(todos, slug):
-    P = {"high": "high", "medium": "medium", "low": "low"}
+    P = {"high": "高", "medium": "中", "low": "低"}
     lines = [f"任务汇报 — {slug}", "─" * 40]
     for i, t in enumerate(todos):
         icon = "✅" if t.get("status") == "completed" else "❌" if t.get("status") == "cancelled" else "⬜"
@@ -171,7 +171,7 @@ def _gen_report(todos, slug):
         try:
             with open(lp, "r", encoding="utf-8") as f:
                 log = f.read()
-            ts_list = [ln[1:20] for ln in log.split("\n") if ln.startswith("[") and "T" in ln[1:20]]
+            ts_list = [ln[1:20] for ln in log.replace("\r", "").split("\n") if ln.startswith("[") and "T" in ln[1:20]]
             if len(ts_list) >= 2:
                 try:
                     t1 = datetime.fromisoformat(ts_list[0])
@@ -198,7 +198,7 @@ def _do_archive():
     slug = state.get("slug", "unknown")
     d = os.path.join(_arc(), slug)
     os.makedirs(_arc(), exist_ok=True)
-    if os.path.exists(d):
+    if os.path.isdir(d):
         d = os.path.join(_arc(), f"{slug}_{datetime.now().strftime('%H%M%S')}")
     now = datetime.now().isoformat(timespec="seconds")
     with open(os.path.join(cur, "progress.log"), "a", encoding="utf-8") as f:
@@ -338,10 +338,8 @@ class TaskListTool(_FT):
                 _update_state(todos)
                 done = all(t.get("status") in ("completed", "cancelled") for t in todos)
                 if done:
-                    arc = _do_archive()
-                    sl = arc.get("slug", "unknown") if arc else "unknown"
                     return _ok(todos, summary="全部完成 — 请调用 action='complete' 生成汇报",
-                               workspace="task_scaffolds/current/", action="all_done", slug=sl)
+                               workspace="task_scaffolds/current/", action="all_done")
                 return _ok(todos, summary=_summary(todos), workspace="task_scaffolds/current/", action="state_updated")
 
             if action == "complete":
@@ -386,7 +384,7 @@ class TaskArchiveTool(_FT):
                                           "completed": sum(1 for t in tds if t.get("status") in ("completed", "cancelled")),
                                           "tags": st.get("tags", []),
                                           "summary": tds[0]["content"][:60] if tds else ""})
-                total = len(items)
+                total = len(dirs)
                 return json.dumps({"ok": True, "archives": items[:20], "total": total,
                                    "has_more": len(items) > 20}, ensure_ascii=False)
 
