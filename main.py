@@ -5,6 +5,7 @@ from datetime import datetime
 from astrbot.api import FunctionTool as _FT, logger, star
 from astrbot.api.star import StarTools
 
+
 _VS = {"pending", "in_progress", "completed", "cancelled"}
 
 _RT = "# 调研\n\n*（在此记录参考来源、竞品分析、技术决策依据）*\n\n## 参考来源\n- \n\n## 技术对比\n- \n\n## 决策记录\n- \n"
@@ -301,6 +302,7 @@ class TaskListTool(_FT):
         try:
             active = _is_active()
             if action == "status":
+                _log_activity("read", "task_list status 查询")
                 if not active:
                     return json.dumps({"ok": True, "status": "idle", "summary": "IDLE — 无活跃任务"}, ensure_ascii=False)
                 sp = os.path.join(_cur(), "00_task_state.json")
@@ -311,6 +313,7 @@ class TaskListTool(_FT):
                            status="active", slug=st.get("slug"))
 
             if action == "start":
+                _log_activity("exec", f"task_list start: {len(todos)} tasks")
                 if active:
                     return _err("已有活跃任务，请先 complete 或清空后重试")
                 if not todos:
@@ -324,6 +327,7 @@ class TaskListTool(_FT):
                            files=fs, action="workspace_created", slug=slug)
 
             if action == "update":
+                _log_activity("exec", f"task_list update: {len(todos)} tasks")
                 if not todos:
                     return _err("update 需要提供 todos 列表")
                 e = _validate(todos)
@@ -344,6 +348,7 @@ class TaskListTool(_FT):
                 return _ok(todos, summary=_summary(todos), workspace="task_scaffolds/current/", action="state_updated")
 
             if action == "complete":
+                _log_activity("exec", "task_list complete — 生成汇报中")
                 if not active:
                     return _err("无活跃任务")
                 sp = os.path.join(_cur(), "00_task_state.json")
@@ -440,6 +445,15 @@ class TaskArchiveTool(_FT):
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+def _log_activity(typ: str, detail: str, agent: str = "Agent"):
+    state_dir = os.path.join(_root(), "state")
+    os.makedirs(state_dir, exist_ok=True)
+    entry = json.dumps({"ts": datetime.now().strftime("%H:%M:%S"), "type": typ, "agent": agent, "detail": detail},
+                       ensure_ascii=False)
+    with open(os.path.join(state_dir, "activity.jsonl"), "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
+
+
 def _load_dashboard():
     fp = os.path.join(_PLUGIN_DIR, "templates", "dashboard.html")
     with open(fp, "r", encoding="utf-8") as f:
@@ -519,10 +533,26 @@ def _register_routes(context):
             content = f.read()
         return Response(content[:5000], content_type="text/plain; charset=utf-8")
 
+    async def api_activity():
+        fp = os.path.join(_root(), "state", "activity.jsonl")
+        if not os.path.isfile(fp):
+            return jsonify([])
+        lines = []
+        with open(fp, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        lines.append(json.loads(line))
+                    except Exception:
+                        pass
+        return jsonify(lines[-20:])
+
     context.register_web_api("/task_scaffold/dashboard", dashboard, ["GET"], "任务工作台 HTML")
     context.register_web_api("/task_scaffold/api/current", api_current, ["GET"], "当前任务 JSON")
     context.register_web_api("/task_scaffold/api/current/file/<name>", api_current_file, ["GET"], "当前任务文件内容")
     context.register_web_api("/task_scaffold/api/archives", api_archives, ["GET"], "归档列表 JSON")
+    context.register_web_api("/task_scaffold/api/activity", api_activity, ["GET"], "实时活动 JSONL")
     context.register_web_api("/task_scaffold/api/archive/<slug>/summary", api_archive_summary, ["GET"], "归档摘要 JSON")
     context.register_web_api("/task_scaffold/api/archive/<slug>/file/<name>", api_archive_file, ["GET"], "归档文件内容")
 

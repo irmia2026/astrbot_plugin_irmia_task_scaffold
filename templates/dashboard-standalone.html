@@ -163,6 +163,9 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 @media(max-width:900px){#file-col{display:none}}
 @media(max-width:640px){#nav-col{width:160px}}
 </style>
+<script>
+const E={"current": {"active": true, "slug": "2026-05-31_REV-008", "tags": ["devkit", "debug", "安全"], "count": 7, "completed": 2, "todos": [{"content": "es_search Linux fallback 测试", "priority": "high", "status": "completed"}, {"content": "disk_info 多挂载点验证", "priority": "high", "status": "completed"}, {"content": "safe_edit 权限拒绝测试", "priority": "high", "status": "in_progress"}, {"content": "sys_snapshot macOS 友好报错", "priority": "medium", "status": "pending"}, {"content": "_registry 组注释清理", "priority": "medium", "status": "pending"}, {"content": "lint_runner fallback 链验证", "priority": "low", "status": "pending"}, {"content": "rg_search 上下文输出验证", "priority": "low", "status": "pending"}]}, "archives": [{"slug": "2026-05-28_TASK-011", "completed_at": "2026-05-28", "completed": 3, "count": 3, "summary": "✅ description 改造 · ✅ 工单编号修复 · ✅ file_remove 新增", "tags": ["devkit", "description"]}, {"slug": "2026-05-26_REV-003", "completed_at": "2026-05-26", "completed": 3, "count": 3, "summary": "✅ H-04 gh_cli try/finally · ✅ L-02 备份微秒 · ✅ L-03 TB显示", "tags": ["审计", "安全"]}, {"slug": "2026-04-15_EBOOK", "completed_at": "2026-04-15", "completed": 2, "count": 2, "summary": "✅ Liber3 源检测 · ✅ Archive.org 备用", "tags": ["插件", "调试"]}], "activity": [{"ts": "18:31:52", "type": "reply", "agent": "弥亚", "detail": "回复 · 审查完毕，opencode 做得不错"}, {"ts": "18:30:18", "type": "think", "agent": "弥亚", "detail": "分析 dashboard-v6 与 frontend-design skill 差距…"}, {"ts": "18:28:44", "type": "read", "agent": "弥亚", "detail": "读取 frontend-design SKILL.md"}, {"ts": "18:26:30", "type": "exec", "agent": "弥亚", "detail": "task_list status → 2/7 完成"}, {"ts": "18:25:12", "type": "think", "agent": "弥亚", "detail": "对照 008 五项优化审查…"}, {"ts": "18:23:55", "type": "exec", "agent": "opencode", "detail": "task_list complete → 归档到 archive/"}, {"ts": "18:21:08", "type": "reply", "agent": "opencode", "detail": "修订 dashboard.html · 适配 API 端点"}, {"ts": "18:18:44", "type": "exec", "agent": "opencode", "detail": "git_push → origin/main cc2773b"}, {"ts": "18:17:31", "type": "think", "agent": "opencode", "detail": "对照 007 工单检查路由…"}, {"ts": "18:14:06", "type": "exec", "agent": "弥亚", "detail": "disk_info → {C:93.5%, D:91.3%}"}, {"ts": "18:12:50", "type": "think", "agent": "弥亚", "detail": "评估 safe_edit 权限拒绝…"}, {"ts": "18:11:33", "type": "reply", "agent": "弥亚", "detail": "TASK-007 已开 ← dashboard-v6"}, {"ts": "18:10:15", "type": "read", "agent": "弥亚", "detail": "读取 dashboard-v6.html 定稿"}, {"ts": "18:08:58", "type": "exec", "agent": "弥亚", "detail": "task_list update → #3 in_progress"}, {"ts": "18:07:42", "type": "exec", "agent": "弥亚", "detail": "lint_runner 扫描 main.py → 0 问题"}, {"ts": "18:06:25", "type": "reply", "agent": "弥亚", "detail": "五种优化建议 → 提工单"}, {"ts": "18:04:11", "type": "think", "agent": "弥亚", "detail": "对照 frontend-design skill…"}, {"ts": "18:01:58", "type": "exec", "agent": "opencode", "detail": "git_push → origin/main cc2773b"}, {"ts": "17:59:44", "type": "reply", "agent": "opencode", "detail": "TASK-007 施工完成"}]};
+</script>
 </head>
 <body>
 <div id="app">
@@ -220,12 +223,12 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </div>
 
 <script>
-const API='/task_scaffold/api';
+var API='__EMBEDDED__';
 const FILE_ICONS={'01_research.md':'','02_design.md':'','03_work_order.md':'','00_task_state.json':'','progress.log':''};
 let ST={current:null,archives:[],activeCat:'all',files:{},lastActivity:0};
 
-async function get(path){const r=await fetch(API+path);return r.json();}
-async function getText(path){const r=await fetch(API+path);return r.text();}
+async function get(path){if(API==='__EMBEDDED__'){const m={'/current':E.current,'/archives':E.archives,'/activity':E.activity};if(m[path])return m[path];return{};}const r=await fetch(API+path);return r.json();}
+async function getText(path){if(API==='__EMBEDDED__')return'(离线)';const r=await fetch(API+path);return r.text();}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 function ts(){const t=new Date();return t.toTimeString().slice(0,8);}
 
