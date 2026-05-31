@@ -225,7 +225,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 var API='/api/plug/task_scaffold/api';
 let ST={current:null,archives:[],activeCat:'all',files:{},_cacheAct:'',_cacheCur:''},_rendered=new Set();
 
-async function get(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__'){if(path==='/current')return E.current;if(path==='/archives')return E.archives;if(path==='/activity')return E.activity||[];return{};}try{const r=await fetch(API+path);if(!r.ok){console.warn('API '+path+' → '+r.status);return path==='/activity'||path==='/archives'?[]:null;}const t=await r.text();try{return JSON.parse(t);}catch(e){console.warn('JSON parse failed '+path,t.slice(0,60));return path==='/activity'||path==='/archives'?[]:null;}}catch(e){console.warn('Fetch '+path,e);return path==='/activity'||path==='/archives'?[]:null;}}
+async function get(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__'){if(path==='/current')return E.current;if(path==='/archives')return E.archives;if(path==='/activity')return E.activity||[];return{};}try{const r=await fetch(API+path);if(!r.ok){console.warn('API '+path+' → '+r.status);return path==='/current'?{active:!1}:path==='/activity'||path==='/archives'?[]:null;}const t=await r.text();try{return JSON.parse(t);}catch(e){console.warn('JSON parse failed '+path,t.slice(0,60));return path==='/current'?{active:!1}:path==='/activity'||path==='/archives'?[]:null;}}catch(e){console.warn('Fetch '+path,e);return path==='/current'?{active:!1}:path==='/activity'||path==='/archives'?[]:null;}}
 async function getText(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '(离线)';try{const r=await fetch(API+path);return r.text();}catch(e){return '(无法加载)'};}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 function ts(){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '离线快照';const t=new Date();return t.toTimeString().slice(0,8);}
@@ -254,19 +254,22 @@ function _animPct(el,tgt){let cur=0;const step=()=>{cur=Math.min(cur+Math.ceil((
 async function loadCurrent(){
   let cur;
   try{cur=await get('/current');}catch(e){return;}
-  const curStr=JSON.stringify(cur);
-  if(curStr===ST._cacheCur)return;
-  ST._cacheCur=curStr;ST.current=cur;
-  const tbody=document.getElementById('task-body');
-  const thead=document.getElementById('task-header');
-  tbody.innerHTML=_skelTask();
-  if(!ST.current.active){
+  if(!cur||!cur.active){
+    if(cur===null) console.warn('loadCurrent: get("/current") returned null');
+    const tbody=document.getElementById('task-body');
+    const thead=document.getElementById('task-header');
     thead.textContent='当前任务';
     tbody.innerHTML='<div class="empty-state"><div class="empty-house"></div><h4>无活跃任务</h4><p>对 Agent 说要做什么即可</p></div>';
     document.getElementById('file-nav-items').innerHTML='';
     document.getElementById('preview-body').textContent='';
     return;
   }
+  const curStr=JSON.stringify(cur);
+  if(curStr===ST._cacheCur)return;
+  ST._cacheCur=curStr;ST.current=cur;
+  const tbody=document.getElementById('task-body');
+  const thead=document.getElementById('task-header');
+  tbody.innerHTML=_skelTask();
   const td=ST.current.todos||[]; const n=td.length;
   const comp=ST.current.completed||0; const pct=n?Math.round(comp/n*100):0;
   const ip=td.find(t=>t.status==='in_progress');
@@ -317,8 +320,11 @@ async function selectFile(name){
 }
 
 async function loadArchives(){
-  try{ST.archives=await get('/archives')||[];}catch(e){return;}
   document.getElementById('archive-list').innerHTML=_skelArchive();
+  let arcs;
+  try{arcs=await get('/archives');}catch(e){return;}
+  if(!arcs||!Array.isArray(arcs)){console.warn('loadArchives: non-array',arcs);arcs=[];}
+  ST.archives=arcs;
   document.getElementById('archive-badge').textContent=ST.archives.length;
   const tags={};
   ST.archives.forEach(a=>{(a.tags||[]).forEach(t=>{tags[t]=(tags[t]||0)+1})});
