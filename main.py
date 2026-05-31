@@ -3,7 +3,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from astrbot.api import FunctionTool as _FT, logger, star
-from astrbot.api.star import StarTools
 from astrbot.api.event import filter, AstrMessageEvent
 
 _VS = {"pending", "in_progress", "completed", "cancelled"}
@@ -17,7 +16,7 @@ _ROOT_CACHE = None
 def _root():
     global _ROOT_CACHE
     if _ROOT_CACHE is None:
-        _ROOT_CACHE = os.path.join(str(StarTools.get_data_dir()), "task_scaffolds")
+        _ROOT_CACHE = os.path.join(os.path.expanduser("~"), ".astrbot", "data", "task_scaffolds")
     return _ROOT_CACHE
 
 
