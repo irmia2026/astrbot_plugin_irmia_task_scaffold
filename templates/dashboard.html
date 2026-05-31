@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务工作台 · irmia_task_scaffold</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=M+PLUS+1p:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f8f7f4;--card:#fff;--text:#2d2a26;--muted:#8c8a85;--border:#e8e6e1;--coral:#f4845f;--coral-light:#fef0e9;--mint:#6cbaa7;--mint-light:#edf7f4;--amber:#e8b348;--amber-light:#fef9ef;--shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);--shadow-hover:0 4px 12px rgba(0,0,0,.08);--radius:12px;--radius-sm:8px;--font-title:'Outfit',sans-serif;--font-body:'M PLUS 1p',sans-serif;--ease-spring:cubic-bezier(.34,1.56,.64,1)}*,::before,::after{box-sizing:border-box;margin:0;padding:0}body{font-family:var(--font-body);background:var(--bg);color:var(--text);line-height:1.6;min-height:100vh;background-image:radial-gradient(ellipse at 20% 20%,rgba(244,132,95,.06) 0%,transparent 50%),radial-gradient(ellipse at 80% 60%,rgba(108,186,167,.05) 0%,transparent 50%)}.shell{max-width:880px;margin:0 auto;padding:32px 20px 64px}.header{display:flex;align-items:center;gap:12px;margin-bottom:28px}.header-icon{font-size:28px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:var(--card);border-radius:var(--radius-sm);box-shadow:var(--shadow)}.header h1{font-family:var(--font-title);font-size:22px;font-weight:700;letter-spacing:-.3px}.header .sub{font-size:13px;color:var(--muted);font-weight:400}.tabs{display:flex;gap:4px;background:var(--border);border-radius:var(--radius);padding:4px;margin-bottom:24px;width:fit-content}.tab-btn{font-family:var(--font-body);font-size:14px;font-weight:500;padding:8px 20px;border:none;border-radius:10px;cursor:pointer;background:transparent;color:var(--muted);transition:all .2s}.tab-btn.active{background:var(--card);color:var(--text);box-shadow:var(--shadow)}.tab-btn .badge{display:inline-block;background:var(--coral-light);color:var(--coral);font-size:12px;padding:1px 8px;border-radius:10px;margin-left:6px;font-weight:700}.panel{display:none;animation:fadeSlide .3s ease}.panel.active{display:block}@keyframes fadeSlide{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}.stream-bar{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}.stream-stat{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}.stream-stat strong{color:var(--text);font-weight:700}.card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 24px;margin-bottom:14px;transition:box-shadow .2s}.card:hover{box-shadow:var(--shadow-hover)}.card-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}.card-title{font-family:var(--font-title);font-size:16px;font-weight:600}.card-meta{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}.card-expand{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:transform .3s var(--ease-spring);font-size:14px}.card.expanded .card-expand{transform:rotate(180deg)}.card-body{max-height:0;overflow:hidden;transition:max-height .4s ease}.card.expanded .card-body{max-height:3000px}.card-body-inner{padding-top:16px;border-top:1px solid var(--border);margin-top:14px}.todo-row{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:14px}.todo-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}.todo-dot.completed{background:var(--mint)}.todo-dot.in_progress{background:var(--coral);animation:pulse 1.5s infinite}.todo-dot.pending{background:var(--border)}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}.todo-priority{font-size:11px;padding:1px 8px;border-radius:8px}.todo-priority.high{background:var(--coral-light);color:var(--coral)}.todo-priority.medium{background:var(--amber-light);color:var(--amber)}.todo-priority.low{background:#f3f3f1;color:var(--muted)}.tag-bar{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}.tag-chip{font-size:13px;padding:5px 14px;border-radius:20px;cursor:pointer;background:var(--card);border:1px solid var(--border);color:var(--muted);transition:all .15s;font-family:var(--font-body)}.tag-chip:hover{border-color:var(--coral);color:var(--coral)}.tag-chip.active{background:var(--coral-light);border-color:var(--coral);color:var(--coral);font-weight:500}.search-wrap{position:relative;margin-bottom:18px}.search-input{width:100%;padding:10px 16px 10px 40px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:14px;font-family:var(--font-body);background:var(--card);transition:border-color .2s}.search-input:focus{outline:none;border-color:var(--coral)}.search-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--muted)}.month-group{margin-bottom:6px}.month-toggle{width:100%;padding:10px 16px;background:transparent;border:none;font-family:var(--font-title);font-size:15px;font-weight:600;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:10px;border-radius:var(--radius-sm);transition:background .15s}.month-toggle:hover{background:var(--card)}.month-toggle .chevron{transition:transform .3s var(--ease-spring);font-size:12px}.month-group.open .month-toggle .chevron{transform:rotate(90deg)}.month-cards{display:none;padding-left:8px}.month-group.open .month-cards{display:block}.file-section{margin-top:12px}.file-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:4px;display:flex;align-items:center;gap:6px}.file-preview{background:#faf9f7;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;font-family:'JetBrains Mono','Consolas',monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;max-height:200px;overflow-y:auto;color:#4a4640}.empty-state{text-align:center;padding:48px 24px;color:var(--muted)}.empty-state .emoji{font-size:48px;margin-bottom:12px}.empty-state p{font-size:15px}.progress-bar-wrap{height:6px;background:var(--border);border-radius:3px;margin:8px 0}.progress-bar-fill{height:100%;border-radius:3px;background:var(--coral);transition:width .6s var(--ease-spring)}.progress-bar-fill.done{background:var(--mint)}@media(max-width:600px){.shell{padding:20px 14px}.card{padding:16px 18px}.header h1{font-size:18px}}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<div class="header">
+  <div class="header-icon">📋</div>
+  <div><h1>任务工作台</h1><div class="sub">irmia_task_scaffold</div></div>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('current')">📌 当前任务</button>
+  <button class="tab-btn" onclick="switchTab('archive')">📦 已归档 <span class="badge" id="archive-count">-</span></button>
+</div>
+
+<div id="panel-current" class="panel active"><div id="current-content"></div></div>
+
+<div id="panel-archive" class="panel">
+  <div class="stream-bar">
+    <div class="stream-stat">📦 总计 <strong id="stat-total">-</strong></div>
+    <div class="stream-stat">✅ 完成率 <strong id="stat-rate">-</strong></div>
+    <div class="stream-stat">🗓️ 跨时 <strong id="stat-span">-</strong></div>
+  </div>
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input class="search-input" type="text" placeholder="搜索工单、调研笔记、文件名..." id="archive-search" oninput="renderArchive()">
+  </div>
+  <div class="tag-bar" id="tag-bar"></div>
+  <div id="archive-list"></div>
+</div>
+
+</div>
+
+<script>
+const S = {
+  currentData: null,
+  archivesData: [],
+  activeTag: null,
+  archiveSlugMap: {}
+};
+
+async function api(path) { const r = await fetch('/task_scaffold/api' + path); return r.json(); }
+async function apiText(path) { const r = await fetch('/task_scaffold/api' + path); return r.text(); }
+function esc(s) { const d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+function trunc(s,n) { return s && s.length > n ? s.slice(0,n)+'...' : (s||''); }
+function emptyState(emoji,text,sub) {
+  return '<div class="empty-state"><div class="emoji">'+emoji+'</div><p>'+text+'</p>'+(sub?'<p style="font-size:13px;margin-top:4px">'+sub+'</p>':'')+'</div>';
+}
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  if(tab==='current'){
+    document.querySelectorAll('.tab-btn')[0].classList.add('active');
+    document.getElementById('panel-current').classList.add('active');
+    loadCurrent();
+  }else{
+    document.querySelectorAll('.tab-btn')[1].classList.add('active');
+    document.getElementById('panel-archive').classList.add('active');
+    loadArchive();
+  }
+}
+
+/* ── Current ── */
+async function loadCurrent() {
+  const ct = document.getElementById('current-content');
+  try { S.currentData = await api('/current'); }
+  catch(e) { ct.innerHTML = emptyState('😵','无法连接服务'); return; }
+  if(!S.currentData.active) { ct.innerHTML = emptyState('🏖️','当前无活跃任务','需要执行多步骤任务时，对 Agent 说要做什么就行'); return; }
+  const slug = S.currentData.slug || '活跃任务';
+  const cardId = 'card-current';
+  ct.innerHTML = buildCard(cardId, slug, S.currentData, true);
+  if(S.currentData.files) loadFiles(cardId, 'current', null, S.currentData.files);
+}
+
+/* ── Archive ── */
+async function loadArchive() {
+  try { S.archivesData = (await api('/archives')) || []; }
+  catch(e) { document.getElementById('archive-list').innerHTML = emptyState('😵','无法加载归档'); return; }
+  const total = S.archivesData.length;
+  const tAll = S.archivesData.reduce((s,a)=>s+(a.count||0),0);
+  const tDone = S.archivesData.reduce((s,a)=>s+(a.completed||0),0);
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-rate').textContent = tAll ? Math.round(tDone/tAll*100)+'%' : '-';
+  document.getElementById('archive-count').textContent = total;
+  if(S.archivesData.length>=2){
+    const dates = S.archivesData.map(a=>(a.slug||'').split('_')[0]).filter(Boolean).sort();
+    document.getElementById('stat-span').textContent = dates[0]+' → '+dates[dates.length-1];
+  }else{ document.getElementById('stat-span').textContent = '-'; }
+  renderTags();
+  renderArchive();
+}
+
+function renderTags() {
+  const m = {};
+  S.archivesData.forEach(a=>{(a.tags||[]).forEach(t=>{m[t]=(m[t]||0)+1})});
+  const bar = document.getElementById('tag-bar');
+  bar.innerHTML = '<button class="tag-chip'+(S.activeTag===null?' active':'')+'" onclick="filterTag(null)">全部</button>';
+  Object.entries(m).sort((a,b)=>b[1]-a[1]).forEach(([tag,n])=>{
+    bar.innerHTML += '<button class="tag-chip'+(S.activeTag===tag?' active':'')+'" onclick="filterTag(\''+esc(tag)+'\')">'+esc(tag)+' ('+n+')</button>';
+  });
+}
+
+function filterTag(tag) { S.activeTag = tag; renderTags(); renderArchive(); }
+
+function renderArchive() {
+  const kw = (document.getElementById('archive-search')?.value||'').toLowerCase();
+  let items = S.archivesData;
+  if(S.activeTag) items = items.filter(a=>(a.tags||[]).includes(S.activeTag));
+  if(kw) items = items.filter(a=>{
+    const h = (a.slug+' '+(a.summary||'')+' '+(a.tags||[]).join(' ')).toLowerCase();
+    return h.includes(kw);
+  });
+  const groups = {};
+  items.forEach(a=>{
+    const m = (a.slug||'').substring(0,7)||'未知';
+    if(!groups[m]) groups[m] = [];
+    groups[m].push(a);
+  });
+  let html = '';
+  Object.keys(groups).sort().reverse().forEach(m=>{
+    html += '<div class="month-group open">';
+    html += '<button class="month-toggle" onclick="this.parentElement.classList.toggle(\'open\')">';
+    html += '<span class="chevron">▶</span>'+m+' <span style="color:var(--muted);font-size:13px;font-weight:400">('+groups[m].length+')</span></button>';
+    html += '<div class="month-cards">';
+    groups[m].forEach(a=>{
+      const slug = a.slug||'';
+      const cid = 'card-arc-'+slug.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g,'-');
+      S.archiveSlugMap[cid] = slug;
+      html += buildCard(cid, slug, a, false);
+    });
+    html += '</div></div>';
+  });
+  if(!items.length) html = emptyState('📭','没有找到匹配的归档',kw?'试试其他关键词？':'');
+  document.getElementById('archive-list').innerHTML = html;
+}
+
+/* ── Card builder ── */
+function buildCard(cardId, slug, data, isCurrent) {
+  const todos = data.todos || [];
+  const comp = todos.filter(t=>t.status==='completed').length;
+  const total = todos.length;
+  const inProg = todos.find(t=>t.status==='in_progress');
+  const pct = total ? Math.round(comp/total*100) : 0;
+  const done = comp===total && total>0;
+  let meta = pct+'% 完成';
+  if(inProg) meta += ' · 当前: '+trunc(inProg.content,30);
+  if(!isCurrent && data.completed_at) meta += ' · '+data.completed_at;
+  let tagsHtml = '';
+  if(data.tags && data.tags.length) {
+    tagsHtml = '<div style="margin-top:8px">'+data.tags.map(t=>
+      '<span style="display:inline-block;background:var(--coral-light);color:var(--coral);font-size:11px;padding:2px 10px;border-radius:10px;margin-right:6px">'+esc(t)+'</span>'
+    ).join('')+'</div>';
+  }
+  let todosHtml = '';
+  ['in_progress','completed','pending','cancelled'].forEach(st=>{
+    const list = todos.filter(t=>t.status===st);
+    if(!list.length) return;
+    const lab = {in_progress:'⏳ 进行中',completed:'✅ 已完成',pending:'⏳ 待办',cancelled:'❌ 已取消'}[st];
+    todosHtml += '<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:700">'+lab+' ('+list.length+')</div>';
+    list.forEach(t=>{
+      const prio = t.priority||'medium';
+      todosHtml += '<div class="todo-row"><span class="todo-dot '+st+'"></span>';
+      todosHtml += '<span style="flex:1">'+esc(trunc(t.content,60))+'</span>';
+      todosHtml += '<span class="todo-priority '+prio+'">'+prio+'</span></div>';
+    });
+    todosHtml += '</div>';
+  });
+
+  return `<div class="card" id="${cardId}">
+    <div class="card-header" onclick="toggleCard('${cardId}')">
+      <div><div class="card-title">${esc(slug)}</div><div class="card-meta">${meta}</div>${tagsHtml}</div>
+      <div class="card-expand">▼</div>
+    </div>
+    <div class="progress-bar-wrap"><div class="progress-bar-fill${done?' done':''}" style="width:${pct}%"></div></div>
+    <div class="card-body"><div class="card-body-inner">${todosHtml}<div id="${cardId}-files"></div></div></div>
+  </div>`;
+}
+
+function toggleCard(cardId) {
+  const card = document.getElementById(cardId);
+  if(!card) return;
+  card.classList.toggle('expanded');
+  if(card.classList.contains('expanded')) {
+    const fd = document.getElementById(cardId+'-files');
+    if(fd && !fd.dataset.loaded) {
+      fd.dataset.loaded = '1';
+      if(cardId === 'card-current' && S.currentData?.files) {
+        loadFiles(cardId, 'current', null, S.currentData.files);
+      } else {
+        const slug = S.archiveSlugMap[cardId];
+        if(slug) {
+          api('/archive/'+slug+'/summary').then(s=>{
+            if(s.files) loadFiles(cardId, 'archive', slug, s.files);
+          }).catch(()=>{});
+        }
+      }
+    }
+  }
+}
+
+async function loadFiles(cardId, scope, slug, files) {
+  const target = document.getElementById(cardId+'-files');
+  if(!target) return;
+  for(const f of files) {
+    let content = '';
+    try {
+      const path = scope==='current' ? '/current/file/'+f : '/archive/'+slug+'/file/'+f;
+      content = await apiText(path);
+    } catch(e) { content = '(无法加载)'; }
+    target.innerHTML += `<div class="file-section">
+      <div class="file-label">📄 ${esc(f)}</div>
+      <div class="file-preview">${esc(trunc(content,5000))}</div></div>`;
+  }
+}
+
+loadCurrent();
+</script>
+</body>
+</html>
