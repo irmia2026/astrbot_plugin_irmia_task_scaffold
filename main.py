@@ -476,16 +476,24 @@ def _register_routes(context):
 
     _DASHBOARD_HTML = _load_dashboard()
 
+    logger.info(f"[task_scaffold] _root() = {_root()}")
+    logger.info(f"[task_scaffold] _cur()  = {_cur()}")
+    logger.info(f"[task_scaffold] _arc()  = {_arc()}")
+    logger.info(f"[task_scaffold] state exists = {os.path.isfile(os.path.join(_cur(), '00_task_state.json'))}")
+
     async def dashboard():
         return Response(_DASHBOARD_HTML, content_type="text/html; charset=utf-8")
 
     async def api_current():
+        logger.info("[task_scaffold] api_current() called")
         sp = os.path.join(_cur(), "00_task_state.json")
         if not os.path.isfile(sp):
+            logger.warning(f"[task_scaffold] api_current: file not found at {sp}")
             return jsonify({"active": False})
         with open(sp, "r", encoding="utf-8") as f:
             st = json.load(f)
         tds = st.get("todos", [])
+        logger.info(f"[task_scaffold] api_current → active=True, slug={st.get('slug')}, todos={len(tds)}")
         if not tds:
             return jsonify({"active": False})
         return jsonify({"active": True, "slug": st.get("slug"), "tags": st.get("tags", []),
@@ -502,6 +510,7 @@ def _register_routes(context):
         return Response(content[:5000], content_type="text/plain; charset=utf-8")
 
     async def api_archives():
+        logger.info("[task_scaffold] api_archives() called")
         items = []
         a = _arc()
         if os.path.isdir(a):
@@ -523,6 +532,7 @@ def _register_routes(context):
                     items.append({"slug": d, "completed_at": completed_at, "count": len(tds),
                                   "completed": comp, "tags": st.get("tags", []),
                                   "summary": tds[0]["content"][:60] if tds else ""})
+        logger.info(f"[task_scaffold] api_archives → {len(items)} items")
         return jsonify(items[:50])
 
     async def api_archive_summary(slug):
