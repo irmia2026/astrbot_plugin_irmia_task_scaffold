@@ -72,6 +72,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .todo-item:hover{background:#f8fafc}
 .todo-num{width:19px;height:19px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;font-feature-settings:'tnum';flex-shrink:0}
 .todo-num.done{background:var(--emerald-light);color:var(--emerald)}
+.todo-num.cancelled{background:#f1f5f9;color:var(--muted)}
 .todo-num.active{background:var(--blue);color:#fff}
 .todo-num.waiting{background:#f1f5f9;color:var(--muted)}
 .todo-text{flex:1;font-size:12px}
@@ -298,7 +299,7 @@ async function loadCurrent(){
   h+='<div class="task-hero-tags">';
   (ST.current.tags||[]).forEach(t=>{h+='<span class="task-hero-tag">'+esc(t)+'</span>'});
   h+='</div></div>';
-  const dash=((100-pct)/100*175.93).toFixed(1);
+  const dash=((100-pct)/100*2*Math.PI*28).toFixed(1);
   h+='<div class="progress-row"><div class="progress-ring"><svg viewBox="0 0 64 64"><circle class="bg" cx="32" cy="32" r="28"/><circle class="fill" cx="32" cy="32" r="28" stroke-dasharray="175.93" stroke-dashoffset="'+dash+'"/></svg><span class="pct anim" id="pct-val">0%</span></div>';
   h+='<div class="progress-stats">';
   if(ip) h+='<div class="progress-stat"><span class="progress-dot active"></span> 进行中 <b>#'+(td.indexOf(ip)+1)+' '+esc(ip.content.slice(0,30))+'</b></div>';
@@ -306,8 +307,8 @@ async function loadCurrent(){
   h+='<div class="progress-stat"><span class="progress-dot waiting"></span> 待办 <b>'+(n-comp)+' 项</b></div>';
   h+='</div></div><div class="todo-list">';
   td.forEach((t,i)=>{
-    const s=t.status==='completed'||t.status==='cancelled'?'done':t.status==='in_progress'?'active':'waiting';
-    h+='<div class="todo-item'+(s==='done'?' done':'')+'"><span class="todo-num '+s+'">'+(i+1)+'</span><span class="todo-text'+(s==='done'?' done':'')+'">'+esc(t.content)+'</span><span class="todo-pill '+(t.priority||'medium')+'">'+(t.priority||'medium')+'</span></div>';
+    const s=t.status==='completed'?'done':t.status==='cancelled'?'cancelled':t.status==='in_progress'?'active':'waiting';
+    h+='<div class="todo-item'+(s==='done'||s==='cancelled'?' done':'')+'"><span class="todo-num '+s+'">'+(i+1)+'</span><span class="todo-text'+(s==='done'?' done':s==='cancelled'?' done':'')+'">'+esc(t.content)+'</span><span class="todo-pill '+(t.priority||'medium')+'">'+(t.priority||'medium')+'</span></div>';
   });
   h+='</div>';
   tbody.innerHTML=h;
@@ -346,9 +347,9 @@ async function loadArchives(){
   const tags={};
   ST.archives.forEach(a=>{(a.tags||[]).forEach(t=>{tags[t]=(tags[t]||0)+1})});
   const tc=document.getElementById('tag-cats');
-  tc.innerHTML='<div class="nav-item active" style="font-size:12px" onclick="filterArchiveCat(\'all\')">全部</div>';
+  tc.innerHTML='<div class="nav-item'+(ST.activeCat==='all'?' active':'')+'" style="font-size:12px" onclick="filterArchiveCat(\'all\')">全部</div>';
   Object.entries(tags).sort((a,b)=>b[1]-a[1]).forEach(([tag,n])=>{
-    tc.innerHTML+='<div class="nav-item" style="font-size:12px" onclick="filterArchiveCat(\''+esc(tag)+'\')"> '+esc(tag)+' ('+n+')</div>';
+    tc.innerHTML+='<div class="nav-item'+(ST.activeCat===tag?' active':'')+'" style="font-size:12px" onclick="filterArchiveCat(\''+esc(tag)+'\')"> '+esc(tag)+' ('+n+')</div>';
   });
   renderArchive();
 }
@@ -382,7 +383,7 @@ function filterArchiveCat(cat){
   ST.activeCat=cat;
   document.querySelectorAll('#tag-cats .nav-item').forEach(el=>el.classList.remove('active'));
   const cats=document.querySelectorAll('#tag-cats .nav-item');
-  cats.forEach(el=>{if(el.textContent.trim().startsWith(cat==='all'?'全部':cat))el.classList.add('active')});
+  cats.forEach(el=>{const t=el.textContent.trim();if(cat==='all'?t==='全部':t.startsWith(cat+' ('))el.classList.add('active')});
   renderArchive();
 }
 

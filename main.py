@@ -12,8 +12,13 @@ _RT = "# 调研\n\n*（在此记录参考来源、竞品分析、技术决策依
 _DT = "# 设计\n\n*（在此记录架构决策、接口定义、数据流图）*\n\n## 架构决策\n- \n\n## 接口定义\n- \n\n## 数据流\n- \n"
 
 
+_ROOT_CACHE = None
+
 def _root():
-    return os.path.join(str(StarTools.get_data_dir()), "task_scaffolds")
+    global _ROOT_CACHE
+    if _ROOT_CACHE is None:
+        _ROOT_CACHE = os.path.join(str(StarTools.get_data_dir()), "task_scaffolds")
+    return _ROOT_CACHE
 
 
 def _cur():
@@ -83,7 +88,7 @@ def _summary(todos):
     if pd:
         p.append(f"待办 {len(pd)} 项")
     if d == n and n > 0:
-        p.append("全部完成，将自动归档")
+        p.append("全部完成，请调 complete")
     return " | ".join(p)
 
 
@@ -137,8 +142,11 @@ def _init_ws(todos, slug, tags=None):
 def _update_state(todos):
     cur = _cur()
     sp = os.path.join(cur, "00_task_state.json")
-    with open(sp, "r", encoding="utf-8") as f:
-        state = json.load(f)
+    try:
+        with open(sp, "r", encoding="utf-8") as f:
+            state = json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        state = {"slug": "unknown", "todos": [], "tags": []}
     old = state.get("todos", [])
     now = datetime.now().isoformat(timespec="seconds")
     ch = []
@@ -199,7 +207,9 @@ def _do_archive():
     d = os.path.join(_arc(), slug)
     os.makedirs(_arc(), exist_ok=True)
     if os.path.isdir(d):
-        d = os.path.join(_arc(), f"{slug}_{datetime.now().strftime('%H%M%S')}")
+        slug = f"{slug}_{datetime.now().strftime('%H%M%S')}"
+        d = os.path.join(_arc(), slug)
+        state["slug"] = slug
     now = datetime.now().isoformat(timespec="seconds")
     with open(os.path.join(cur, "progress.log"), "a", encoding="utf-8") as f:
         f.write(f"[{now}] TASK mode ended\n")
@@ -539,8 +549,11 @@ def _register_routes(context):
             return jsonify({"ok": False, "error": "not found"})
         with open(fp, "r", encoding="utf-8") as f:
             st = json.load(f)
-        st["files"] = ["00_task_state.json", "01_research.md", "02_design.md",
-                       "03_work_order.md", "progress.log"]
+        arc_dir = os.path.join(_arc(), slug)
+        actual = [n for n in os.listdir(arc_dir) if os.path.isfile(os.path.join(arc_dir, n))]
+        st["files"] = sorted(actual, key=lambda x: (
+            {"00_task_state.json": 0, "03_work_order.md": 1, "02_design.md": 2, "01_research.md": 3, "progress.log": 4}
+        ).get(x, 99))
         return jsonify(st)
 
     async def api_archive_file(slug, name):
@@ -584,7 +597,8 @@ def _register_routes(context):
         app = getattr(context, 'app', None) or getattr(context, '_app', None) or getattr(context, 'web_app', None)
         if app:
             for path, handler, methods, desc in _ROUTES:
-                app.add_url_rule(path, path.replace("/", "_"), handler, methods=methods)
+                if "<" not in path:
+                    app.add_url_rule(path, path.replace("/", "_"), handler, methods=methods)
             logger.info(f"已通过 Quart app 注册 {len(_ROUTES)} 条路由")
     except Exception:
         pass
@@ -614,7 +628,9 @@ class Main(star.Star):
 
     @filter.on_llm_response()
     async def _on_response(self, event: AstrMessageEvent, resp):
-        _log_activity("Miria", "回复中", "打字中…")
+        text = str(resp.message) if hasattr(resp, 'message') else str(resp)
+        preview = text[:30].replace("\n", " ") if text else ""
+        _log_activity("Miria", "回复中", f"回复{' · ' + preview if preview else '…'}")
 
     @filter.on_agent_done()
     async def _on_done(self, event: AstrMessageEvent, run_context, resp):
