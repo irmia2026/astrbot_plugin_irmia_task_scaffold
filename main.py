@@ -45,7 +45,7 @@ def _get_mode():
 
 _WRITE_PATTERNS = ["edit", "patch", "write", "remove", "delete", "commit", "push",
                    "rollback", "download", "save", "create", "upload", "shell",
-                   "execute", "exec_shell", "unzip", "zip_"]
+                   "execute", "unzip", "zip"]
 _SAFE_EXPLICIT = ["task_list", "task_archive"]
 
 
@@ -72,10 +72,11 @@ def _set_mode(mode: str, context=None):
     with open(_mode_path(), "w", encoding="utf-8") as f:
         json.dump({"mode": mode}, f, ensure_ascii=False)
     if not context:
-        return
+        return False
     all_names = _get_all_tool_names(context)
     if not all_names:
-        return
+        logger.warning("_set_mode: 无法获取工具列表，工具状态未切换")
+        return False
     if mode == "plan":
         off = []
         on = []
@@ -102,6 +103,7 @@ def _set_mode(mode: str, context=None):
             except Exception:
                 pass
         logger.info(f"build 模式: 已启用 {len(on)} 个工具")
+    return True
 
 
 def _is_active():
@@ -697,7 +699,8 @@ def _register_routes(context):
             m = ""
         if m not in ("plan", "build"):
             return jsonify({"ok": False, "error": "mode 必须是 plan 或 build"})
-        _set_mode(m, context)
+        if not _set_mode(m, context):
+            return jsonify({"ok": False, "error": "无法切换模式：工具管理器未就绪，请稍后重试"})
         _log_activity("System", "系统", f"模式切换 → {m}")
         return jsonify({"ok": True, "mode": m})
 
@@ -746,7 +749,11 @@ class Main(star.Star):
     async def _on_tool_call(self, event: AstrMessageEvent, tool, tool_args):
         name = tool.name if hasattr(tool, "name") else str(tool)
         if _get_mode() == "plan" and name in ("file_write", "file_edit"):
-            raise RuntimeError("规划模式（plan）下写操作被拦截，请在 WebUI 任务面板右下角将 规划 切换为 施工 后重试。")
+            logger.warning(f"plan 模式: 拦截到内置写工具 {name}，尝试强制停用")
+            try:
+                tool.active = False
+            except Exception:
+                pass
         detail = str(tool_args)[:80] if isinstance(tool_args, dict) else ""
         ts = ""
         if name == "task_list":
