@@ -63,7 +63,9 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .task-status-bar .tsb-dot.ok{background:var(--emerald)}
 .task-status-bar .tsb-dot.wip{background:var(--blue)}
 
-.cwd-bar{display:flex;align-items:center;gap:6px;padding:3px 14px;font-size:10px;font-weight:500;color:var(--muted)}
+.cwd-bar{display:flex;align-items:center;gap:6px;padding:3px 14px;font-size:11px;font-weight:500;color:var(--text2)}
+.cwd-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;background:var(--emerald);box-shadow:0 0 0 3px var(--emerald-light);animation:dotLive 2s infinite}
+.cwd-path{border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:10px;font-family:var(--font);background:var(--bg);color:var(--text2);min-width:120px}
 
 .task-hero{padding:18px 22px}
 .task-hero-title{font-size:17px;font-weight:700;letter-spacing:-.3px;margin-bottom:3px}
@@ -206,7 +208,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </div>
 
 <div id="center-col">
-  <div class="cwd-bar" id="cwd-bar">当前工作目录：<span id="cwd-text">未设置</span></div>
+  <div class="cwd-bar" id="cwd-bar"><span class="cwd-dot"></span> 当前工作目录：<span class="cwd-path" id="cwd-text">未设置</span></div>
   <div class="panel" id="task-panel">
     <div class="panel-header" id="task-header">当前长任务</div>
     <div class="task-status-bar" id="task-status-bar" style="display:none"></div>
