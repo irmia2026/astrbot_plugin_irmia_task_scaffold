@@ -54,76 +54,12 @@ _WRITE_KEYWORDS = [
     "rollback", "unzip",
 ]
 _ALWAYS_WRITE = {"astrbot_execute_shell", "astrbot_execute_python"}
-_WRITE_TOOL_NAMES: set = set()
-_TOOL_MAP_CACHE: dict = {}
-
-
-def _get_tool_map(context):
-    tools = {}
-    if not context:
-        return tools
-    mgr = getattr(context, 'get_llm_tool_manager', None)
-    if not mgr:
-        return tools
-    try:
-        m = mgr() if callable(mgr) else mgr
-    except Exception:
-        return tools
-    for attr in dir(m):
-        if attr.startswith('_') or attr in ('activate_llm_tool', 'deactivate_llm_tool'):
-            continue
-        try:
-            v = getattr(m, attr)
-        except Exception:
-            continue
-        if isinstance(v, dict) and v:
-            tools = dict(v); break
-        if isinstance(v, (list, tuple)) and v and hasattr(v[0], 'name'):
-            for t in v:
-                n = getattr(t, 'name', '') or str(t)
-                if n:
-                    tools[n] = t
-            break
-    return tools
-
-
-def _apply_mode(mode: str):
-    global _WRITE_TOOL_NAMES
-    if not _TOOL_MAP_CACHE:
-        return
-    if mode == "scan":
-        _WRITE_TOOL_NAMES.clear()
-        for name, tool in _TOOL_MAP_CACHE.items():
-            desc = (getattr(tool, 'description', '') or '').lower()
-            if name in _ALWAYS_WRITE or any(kw in desc for kw in _WRITE_KEYWORDS):
-                _WRITE_TOOL_NAMES.add(name)
-        logger.info(f"启动扫描: 识别 {len(_WRITE_TOOL_NAMES)} 个写工具")
-    elif mode == "plan":
-        for name, tool in _TOOL_MAP_CACHE.items():
-            desc = (getattr(tool, 'description', '') or '').lower()
-            if name in _ALWAYS_WRITE or any(kw in desc for kw in _WRITE_KEYWORDS):
-                try:
-                    tool.active = False
-                    _WRITE_TOOL_NAMES.add(name)
-                except Exception:
-                    pass
-        logger.info(f"plan 模式: 已屏蔽 {len(_WRITE_TOOL_NAMES)} 个写工具")
-    else:
-        for name in _WRITE_TOOL_NAMES:
-            if name in _TOOL_MAP_CACHE:
-                try:
-                    _TOOL_MAP_CACHE[name].active = True
-                except Exception:
-                    pass
-        _WRITE_TOOL_NAMES.clear()
-        logger.info("build 模式: 已恢复全部工具")
 
 
 def _set_mode(mode: str, context=None):
     os.makedirs(os.path.dirname(_mode_path()), exist_ok=True)
     with open(_mode_path(), "w", encoding="utf-8") as f:
         json.dump({"mode": mode}, f, ensure_ascii=False)
-    _apply_mode(mode)
     logger.info(f"模式切换 → {mode}")
     return True
 
@@ -766,14 +702,9 @@ class Main(star.Star):
         ta = TaskArchiveTool()
         context.add_llm_tools(tl, ta)
         _register_routes(context)
-        global _TOOL_MAP_CACHE
-        _TOOL_MAP_CACHE = _get_tool_map(context)
-        _apply_mode("scan")
         if _get_mode() == "plan":
             _set_mode("build")
             logger.info("启动时检测到 plan 模式残留，已强制重置为 build")
-        else:
-            logger.info(f"启动模式: build | 已注册 {len(_TOOL_MAP_CACHE)} 个工具")
         self._tray_stop = None
         try:
             from . import tray
@@ -874,14 +805,36 @@ class Main(star.Star):
     async def _on_llm_req(self, event, request) -> None:
         if _get_mode() != "plan":
             return
+        funcs = getattr(request, 'functions', None) or getattr(request, 'tools', None) or getattr(request, 'func_tool', None)
+        if funcs:
+            keep = []
+            removed = []
+            for f in funcs:
+                name = getattr(f, 'name', '') or (f.get('name', '') if isinstance(f, dict) else '')
+                desc = getattr(f, 'description', '') or (f.get('description', '') if isinstance(f, dict) else '')
+                if name in _ALWAYS_WRITE or any(kw in (desc.lower() if desc else '') for kw in _WRITE_KEYWORDS):
+                    removed.append(name)
+                else:
+                    keep.append(f)
+            if removed:
+                if hasattr(request, 'functions'):
+                    request.functions = keep
+                if hasattr(request, 'tools'):
+                    request.tools = keep
+                if hasattr(request, 'func_tool') and hasattr(request.func_tool, 'remove_tool'):
+                    for name in removed:
+                        try:
+                            request.func_tool.remove_tool(name)
+                        except Exception:
+                            pass
+                logger.info(f"plan 模式屏蔽 {len(removed)} 个写工具: {removed[:8]}{'...' if len(removed)>8 else ''}")
         note = (
             "\n【Plan 模式】写操作已禁用。"
             "仅在需要修改文件/提交代码时提醒用户切换到 build 模式——正常分析无需提及。"
         )
         try:
             sp = request.system_prompt or ""
-            if note in sp:
-                return
-            request.system_prompt = sp + note
+            if note not in sp:
+                request.system_prompt = sp + note
         except Exception:
             pass
