@@ -236,9 +236,10 @@ def _err(msg):
 
 _TASK_LIST_DESC = (
     "你的方法论文本工作空间。使用 action 参数控制模式。\n\n"
-    "【IDLE → TASK】\n"
-    "当用户任务需要 3+ 步 / 多文件 / 预计超 5 轮对话时，\n"
-    "调用 task_list(action='start', todos=[...]) 进入 TASK 模式。\n\n"
+    "【自动触发】\n"
+    "遇到 3+ 步 / 多文件 / 预计超 5 轮对话的任务时，\n"
+    "立即自动调用 task_list(action='start', todos=[...])。\n"
+    "触发后回复用户一句「已进入长任务模式」。\n\n"
     "【TASK 模式中】\n"
     "- 每完成一步：task_list(action='update', todos=[...])\n"
     "- 不确定进度：task_list(action='status')\n"
@@ -282,7 +283,12 @@ _TASK_LIST_PARAMS = {
 }
 
 _TASK_ARCHIVE_DESC = (
-    "查阅已归档的任务历史。日常聊天无需调用——仅在用户明确询问过往任务时使用。\n\n"
+    "你的归档记忆系统。当对话涉及过往任务细节、且上下文可能已缺失时，主动调用召回。\n\n"
+    "【主动召回场景】\n"
+    "- 用户说「上次那个 TASK-XXX 怎么样了」→ read 读取归档\n"
+    "- 用户说「之前修的那个 bug 又出现了」→ search 搜索关键词\n"
+    "- 讨论引用了已归档任务的细节但上下文丢失 → search/read 找回\n"
+    "- 用户询问过去做过什么 → list 列出归档概览\n\n"
     "action:\n"
     "- list: 列出最近归档\n"
     "- read: 读取指定归档的文件（slug + file 必填）\n"
