@@ -104,7 +104,7 @@ def _get_tool_map(context):
         logger.warning(f"_get_tool_map: mgr() failed: {e}")
         return tools
     src = None
-    for attr in ('_tools', 'tools', '_func_tools', 'func_tools', '_tool_map'):
+    for attr in ('_tools', 'tools', '_func_tools', 'func_tools', '_tool_map', 'builtin_func_list'):
         src = getattr(m, attr, None)
         if src is not None:
             logger.debug(f"_get_tool_map: found tools via .{attr}, type={type(src).__name__}")
