@@ -206,11 +206,11 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </div>
 
 <div id="center-col">
-  <div class="cwd-bar" id="cwd-bar" style="display:none"><span class="tsb-dot ok"></span> 当前工作目录：<span id="cwd-text"></span></div>
+  <div class="cwd-bar" id="cwd-bar"><span class="tsb-dot ok"></span> 当前工作目录：<span id="cwd-text">未设置</span></div>
   <div class="panel" id="task-panel">
     <div class="panel-header" id="task-header">当前长任务</div>
     <div class="task-status-bar" id="task-status-bar" style="display:none"></div>
-    <div class="panel-body" id="task-body">
+    <div class="panel-body" id="task-body" style="display:flex;align-items:center;justify-content:center">
       <div class="empty-state"><span class="e-icon"></span><h4>未进入长任务模式</h4><p>告诉 Agent 你的计划，自动进入长任务模式</p></div>
     </div>
     <div style="display:flex;justify-content:flex-end;padding:0 14px 8px">
@@ -308,10 +308,10 @@ async function loadCurrent(){
       const thead=document.getElementById('task-header');
     thead.textContent='当前长任务';
     tbody.innerHTML='<div class="empty-state"><div class="empty-house"></div><h4>未进入长任务模式</h4><p>告诉 Agent 你的计划，自动进入长任务模式</p></div>';
+    tbody.style.display='flex';tbody.style.alignItems='center';tbody.style.justifyContent='center';
       document.getElementById('file-nav-items').innerHTML='';
       document.getElementById('preview-body').textContent='';
       document.getElementById('task-status-bar').style.display='none';
-      document.getElementById('cwd-bar').style.display='none';
       return;
     }
   }
@@ -323,6 +323,7 @@ async function loadCurrent(){
   ST.current=cur;
   ST._lastActive=cur._stale?ST._lastActive:cur;
   const tbody=document.getElementById('task-body');
+  tbody.style.display='';tbody.style.alignItems='';tbody.style.justifyContent='';
   const thead=document.getElementById('task-header');
   tbody.innerHTML=_skelTask();
   const td=ST.current.todos||[]; const n=td.length;
@@ -335,7 +336,7 @@ async function loadCurrent(){
   const bar=document.getElementById('cwd-bar');
   const ct=document.getElementById('cwd-text');
   if(ST.current.cwd){ct.textContent=ST.current.cwd;bar.style.display='flex'}
-  else{bar.style.display='none';ct.textContent=''}
+  else{ct.textContent='未设置'}
   let h='<div class="task-hero">';
   h+='<div class="task-hero-title">'+esc(taskTitle.slice(0,60))+'</div>';
   h+='<div class="task-hero-meta">'+(n)+' 项任务</div>';
