@@ -45,13 +45,69 @@ def _get_mode():
     return "build"
 
 
-_WRITE_TOOLS = {
-    "astrbot_execute_shell", "astrbot_execute_python",
-    "safe_edit", "safe_rollback", "file_patch", "file_write", "file_remove",
-    "git_commit", "git_push", "file_zip", "file_unzip", "http_download",
-    "gh_pr", "gh_issue", "gh_release", "gh_repo", "gh_pr_create",
-    "future_task", "send_message_to_user",
-}
+_READ_KEYWORDS = [
+    "read", "view", "check", "search", "list", "query",
+    "get", "show", "find", "status", "diff", "log",
+    "hash", "compare", "preview", "lookup", "scan",
+    "info", "count", "stat", "tree", "version", "branch",
+    "remote", "snapshot", "parse", "filter", "convert",
+    "decode", "encode", "validate", "test", "render",
+    "strip", "extract", "calculate", "display",
+]
+_WRITE_KEYWORDS = [
+    "write", "edit", "patch", "save", "modify", "create",
+    "delete", "remove", "execute", "run", "send",
+    "download", "commit", "push", "deploy", "start",
+    "stop", "restart", "schedule", "upload", "publish",
+    "release", "merge", "install", "uninstall",
+    "rollback", "unzip",
+]
+_ALWAYS_WRITE = {"astrbot_execute_shell", "astrbot_execute_python"}
+_WRITE_TOOLS: set = set()
+_TOOL_MAP_CACHE: dict = {}
+
+
+def _get_tool_map(context):
+    tools = {}
+    if not context:
+        return tools
+    mgr = getattr(context, 'get_llm_tool_manager', None)
+    if not mgr:
+        logger.warning("_get_tool_map: no tool manager found on context")
+        return tools
+    try:
+        m = mgr() if callable(mgr) else mgr
+    except Exception:
+        return tools
+    for attr in dir(m):
+        if attr.startswith('_') or attr in ('activate_llm_tool', 'deactivate_llm_tool', 'add_func'):
+            continue
+        try:
+            v = getattr(m, attr)
+        except Exception:
+            continue
+        if isinstance(v, dict) and v:
+            tools = dict(v); break
+        if isinstance(v, (list, tuple)) and v and hasattr(v[0], 'name'):
+            for t in v:
+                n = getattr(t, 'name', '') or str(t)
+                if n:
+                    tools[n] = t
+            break
+    return tools
+
+
+def _classify_tools():
+    global _WRITE_TOOLS
+    _WRITE_TOOLS = set(_ALWAYS_WRITE)
+    if not _TOOL_MAP_CACHE:
+        return
+    for name, tool in _TOOL_MAP_CACHE.items():
+        desc = getattr(tool, 'description', '') or ''
+        text = (name + " " + desc).lower()
+        if any(kw in text for kw in _WRITE_KEYWORDS):
+            _WRITE_TOOLS.add(name)
+    logger.info(f"工具分类完成: 读工具放行, 写工具 {len(_WRITE_TOOLS)} 个已标记")
 
 
 def _set_mode(mode: str, context=None):
@@ -700,6 +756,9 @@ class Main(star.Star):
         ta = TaskArchiveTool()
         context.add_llm_tools(tl, ta)
         _register_routes(context)
+        global _TOOL_MAP_CACHE, _WRITE_TOOLS
+        _TOOL_MAP_CACHE = _get_tool_map(context)
+        _classify_tools()
         if _get_mode() == "plan":
             _set_mode("build")
             logger.info("启动时检测到 plan 模式残留，已强制重置为 build")
@@ -718,7 +777,9 @@ class Main(star.Star):
     async def _on_tool_call(self, event: AstrMessageEvent, tool, tool_args):
         name = tool.name if hasattr(tool, "name") else str(tool)
         if _get_mode() == "plan" and name in _WRITE_TOOLS:
-            raise RuntimeError(f"Plan 模式下 {name} 不可用。请在 WebUI 中将 Plan 切换为 Build 后重试。")
+            logger.info(f"plan 模式拒绝写工具: {name}")
+            event.stop_event()
+            return
         detail = str(tool_args)[:80] if isinstance(tool_args, dict) else ""
         ts = ""
         if name == "task_list":
