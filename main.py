@@ -432,7 +432,7 @@ class TaskListTool(_FT):
             active = _is_active()
             mode = _get_mode()
             if action in ("start", "update", "complete") and mode == "plan":
-                return _err("当前为规划模式（plan），写操作已锁定。请在 WebUI 中将 规划 切换为 施工 后重试。")
+                return _err("当前为 Plan 模式，写操作已锁定。请在 WebUI 中将 Plan 切换为 Build 后重试。")
             if action == "status":
                 if not active:
                     return json.dumps({"ok": True, "status": "idle", "summary": "IDLE — 未进入长任务模式"}, ensure_ascii=False)
@@ -817,7 +817,7 @@ class Main(star.Star):
         if _get_mode() != "plan":
             return
         note = (
-            "\n【plan 模式】写操作已禁用。"
+            "\n【Plan 模式】写操作已禁用。"
             "仅在需要修改文件/提交代码时提醒用户切换到 build 模式——正常分析无需提及。"
         )
         try:
