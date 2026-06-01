@@ -45,123 +45,20 @@ def _get_mode():
     return "build"
 
 
-_READ_MARKERS = [
-    "read",     "query",    "get",     "list",
-    "view",     "preview",  "search",  "check",
-    "display",  "show",     "compare", "parse",
-    "calculate","convert",  "test",    "extract",
-    "render",   "status",   "log",     "diff",
-    "hash",     "validate", "scan",    "strip",
-    "filter",   "encode",   "decode",  "统计",
-    "查询",     "预览",     "搜索",    "检查",
-    "解析",     "校验",
-]
-
-
-def _is_read_tool(tool) -> bool:
-    name = getattr(tool, 'name', '') or ''
-    desc = getattr(tool, 'description', '') or ''
-    text = (name + " " + desc).lower()
-    return any(m in text for m in _READ_MARKERS)
-
-
-def _is_self_tool(tool) -> bool:
-    mod = getattr(tool, 'handler_module_path', '') or ''
-    if mod and mod.startswith(_PLUGIN_DIR):
-        return True
-    name = getattr(tool, 'name', '')
-    if name in _SELF_NAMES:
-        return True
-    return False
-
-
-_SELF_NAMES = set()
-_TOOL_MAP_CACHE: dict = {}
-
-
-def _is_plan_safe(tool) -> bool:
-    return _is_self_tool(tool) or _is_read_tool(tool)
-
-
-def _get_tool_map(context):
-    """返回 {name: tool_object} 映射。"""
-    tools = {}
-    if not context:
-        logger.warning("_get_tool_map: context is None")
-        return tools
-    mgr = getattr(context, 'get_llm_tool_manager', None)
-    if not mgr:
-        logger.warning("_get_tool_map: no tool manager found on context")
-        return tools
-    try:
-        m = mgr() if callable(mgr) else mgr
-    except Exception as e:
-        logger.warning(f"_get_tool_map: mgr() failed: {e}")
-        return tools
-    src = None
-    for attr in dir(m):
-        if attr.startswith('_') or attr in ('activate_llm_tool', 'deactivate_llm_tool', 'add_func', 'active'):
-            continue
-        try:
-            v = getattr(m, attr)
-        except Exception:
-            continue
-        if isinstance(v, dict) and v:
-            src = v; break
-        if isinstance(v, (list, tuple)) and v and hasattr(v[0], 'name'):
-            src = v; break
-    if src is None:
-        logger.warning(f"_get_tool_map: no tool container found. m attrs: {[a for a in dir(m) if not a.startswith('__')]}")
-        return tools
-    if isinstance(src, dict):
-        tools = dict(src)
-    else:
-        for t in src:
-            n = getattr(t, 'name', '') or str(t)
-            if n:
-                tools[n] = t
-    logger.info(f"_get_tool_map: collected {len(tools)} tools")
-    return tools
+_WRITE_TOOLS = {
+    "astrbot_execute_shell", "astrbot_execute_python",
+    "safe_edit", "safe_rollback", "file_patch", "file_write", "file_remove",
+    "git_commit", "git_push", "file_zip", "file_unzip", "http_download",
+    "gh_pr", "gh_issue", "gh_release", "gh_repo", "gh_pr_create",
+    "future_task", "send_message_to_user",
+}
 
 
 def _set_mode(mode: str, context=None):
     os.makedirs(os.path.dirname(_mode_path()), exist_ok=True)
     with open(_mode_path(), "w", encoding="utf-8") as f:
         json.dump({"mode": mode}, f, ensure_ascii=False)
-    if not context:
-        return False
-    tool_map = _TOOL_MAP_CACHE
-    if not tool_map and context:
-        tool_map = _get_tool_map(context)
-    if not tool_map:
-        logger.warning("_set_mode: 无法获取工具列表，工具状态未切换")
-        return False
-    if mode == "plan":
-        off = []
-        on = []
-        for name, tool in tool_map.items():
-            try:
-                context.deactivate_llm_tool(name)
-                off.append(name)
-            except Exception:
-                pass
-        for name, tool in tool_map.items():
-            if _is_plan_safe(tool):
-                try:
-                    context.activate_llm_tool(name)
-                    on.append(name)
-                except Exception:
-                    pass
-        logger.info(f"plan 模式: 全禁 {len(off)} → 放行 {len(on)} 个读工具")
-    else:
-        on = []
-        for name in tool_map:
-            try:
-                context.activate_llm_tool(name)
-                on.append(name)
-            except Exception:
-                pass
-        logger.info(f"build 模式: 已启用 {len(on)} 个工具")
+    logger.info(f"模式切换 → {mode}")
     return True
 
 
@@ -764,8 +661,7 @@ def _register_routes(context):
             m = ""
         if m not in ("plan", "build"):
             return jsonify({"ok": False, "error": "mode 必须是 plan 或 build"})
-        if not _set_mode(m, context):
-            return jsonify({"ok": False, "error": "无法切换模式：工具管理器未就绪，请稍后重试"})
+        _set_mode(m)
         _log_activity("System", "系统", f"模式切换 → {m}")
         return jsonify({"ok": True, "mode": m})
 
@@ -802,16 +698,11 @@ class Main(star.Star):
         super().__init__(context)
         tl = TaskListTool()
         ta = TaskArchiveTool()
-        _SELF_NAMES.update([tl.name, ta.name])
         context.add_llm_tools(tl, ta)
         _register_routes(context)
-        global _TOOL_MAP_CACHE
-        _TOOL_MAP_CACHE = _get_tool_map(context)
         if _get_mode() == "plan":
-            _set_mode("build", context)
-            logger.info("启动时检测到 plan 模式残留，已强制重置为 build 模式，所有工具已恢复")
-        else:
-            logger.info(f"启动模式: build | 已注册 {len(_TOOL_MAP_CACHE)} 个工具")
+            _set_mode("build")
+            logger.info("启动时检测到 plan 模式残留，已强制重置为 build")
         self._tray_stop = None
         try:
             from . import tray
@@ -826,12 +717,8 @@ class Main(star.Star):
     @filter.on_using_llm_tool()
     async def _on_tool_call(self, event: AstrMessageEvent, tool, tool_args):
         name = tool.name if hasattr(tool, "name") else str(tool)
-        if _get_mode() == "plan" and name in ("file_write", "file_edit"):
-            logger.warning(f"plan 模式: 拦截到内置写工具 {name}，尝试强制停用")
-            try:
-                tool.active = False
-            except Exception:
-                pass
+        if _get_mode() == "plan" and name in _WRITE_TOOLS:
+            raise RuntimeError(f"Plan 模式下 {name} 不可用。请在 WebUI 中将 Plan 切换为 Build 后重试。")
         detail = str(tool_args)[:80] if isinstance(tool_args, dict) else ""
         ts = ""
         if name == "task_list":
