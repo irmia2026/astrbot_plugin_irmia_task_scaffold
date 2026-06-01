@@ -63,6 +63,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .task-status-bar .tsb-dot.ok{background:var(--emerald)}
 .task-status-bar .tsb-dot.wip{background:var(--blue)}
 
+.cwd-bar{display:flex;align-items:center;gap:8px;padding:5px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:11px;font-weight:500;color:var(--text2)}
+
 .task-hero{padding:18px 22px}
 .task-hero-title{font-size:17px;font-weight:700;letter-spacing:-.3px;margin-bottom:3px}
 .task-hero-meta{font-size:11px;color:var(--text2)}
@@ -204,6 +206,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </div>
 
 <div id="center-col">
+  <div class="cwd-bar" id="cwd-bar" style="display:none"><span class="tsb-dot ok"></span> 当前工作目录：<span id="cwd-text"></span></div>
   <div class="panel" id="task-panel">
     <div class="panel-header" id="task-header">当前长任务</div>
     <div class="task-status-bar" id="task-status-bar" style="display:none"></div>
@@ -308,6 +311,7 @@ async function loadCurrent(){
       document.getElementById('file-nav-items').innerHTML='';
       document.getElementById('preview-body').textContent='';
       document.getElementById('task-status-bar').style.display='none';
+      document.getElementById('cwd-bar').style.display='none';
       return;
     }
   }
@@ -328,14 +332,10 @@ async function loadCurrent(){
   const taskTitle=ST.current.title||(td[0]?td[0].content:'');
   thead.textContent='当前长任务 · '+slug;
   if(ST.current._stale) thead.textContent+=' (已归档)';
-  const sbar=document.getElementById('task-status-bar');
-  const done_all=n>0&&comp===n;
-  let st_text=slug||'';
-  if(n>0) st_text+=' · '+comp+'/'+n+'完成';
-  if(ip&&!done_all) st_text+=' · ⏳ '+esc(ip.content.slice(0,35));
-  if(ST.current.cwd) st_text+=' · '+esc(ST.current.cwd.slice(0,50));
-  sbar.innerHTML='<span class="tsb-dot '+(done_all?'ok':'wip')+'"></span>'+esc(st_text);
-  sbar.style.display='flex';
+  const bar=document.getElementById('cwd-bar');
+  const ct=document.getElementById('cwd-text');
+  if(ST.current.cwd){ct.textContent=ST.current.cwd;bar.style.display='flex'}
+  else{bar.style.display='none';ct.textContent=''}
   let h='<div class="task-hero">';
   h+='<div class="task-hero-title">'+esc(taskTitle.slice(0,60))+'</div>';
   h+='<div class="task-hero-meta">'+(n)+' 项任务</div>';
