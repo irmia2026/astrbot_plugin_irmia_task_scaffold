@@ -508,12 +508,17 @@ def _register_routes(context):
     async def dashboard():
         return Response(_DASHBOARD_HTML, content_type="text/html; charset=utf-8")
 
+    _last_no_state_logged = False
+
     async def api_current():
-        logger.info("[task_scaffold] api_current() called")
+        nonlocal _last_no_state_logged
         sp = os.path.join(_cur(), "00_task_state.json")
         if not os.path.isfile(sp):
-            logger.warning(f"[task_scaffold] api_current: file not found at {sp}")
+            if not _last_no_state_logged:
+                logger.debug(f"[task_scaffold] api_current: no active task (expected after cleanup)")
+                _last_no_state_logged = True
             return jsonify({"active": False})
+        _last_no_state_logged = False
         with open(sp, "r", encoding="utf-8") as f:
             st = json.load(f)
         tds = st.get("todos", [])
