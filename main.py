@@ -343,7 +343,7 @@ class TaskListTool(_FT):
                 return _err("当前为规划模式，禁止写操作。请在 WebUI 中切换到施工模式后再执行。")
             if action == "status":
                 if not active:
-                    return json.dumps({"ok": True, "status": "idle", "summary": "IDLE — 无活跃任务"}, ensure_ascii=False)
+                    return json.dumps({"ok": True, "status": "idle", "summary": "IDLE — 未进入长任务模式"}, ensure_ascii=False)
                 sp = os.path.join(_cur(), "00_task_state.json")
                 with open(sp, "r", encoding="utf-8") as f:
                     st = json.load(f)
@@ -400,7 +400,7 @@ class TaskListTool(_FT):
                                 return json.dumps({"ok": True, "report": report,
                                                    "archive_path": f"task_scaffolds/archive/{slug}/",
                                                    "summary": f"已归档: {slug}", "action": "completed"}, ensure_ascii=False)
-                    return _err("无活跃任务且无归档记录")
+                    return _err("未进入长任务模式且无归档记录")
                 sp = os.path.join(_cur(), "00_task_state.json")
                 with open(sp, "r", encoding="utf-8") as f:
                     st = json.load(f)
