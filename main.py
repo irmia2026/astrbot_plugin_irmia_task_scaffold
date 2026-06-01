@@ -718,5 +718,7 @@ class Main(star.Star):
             "当用户要求做写操作时，你必须回复：\n"
             "「当前处于规划模式，写操作已锁定。请在 WebUI 任务面板右下角将 规划 切换为 施工 后我再执行。」"
         )
-        sp = request.system_prompt or ""
-        request.system_prompt = sp + ban
+        try:
+            request.extra_user_content_parts = (request.extra_user_content_parts or []) + [ban]
+        except Exception:
+            pass
