@@ -199,7 +199,10 @@ def _summary(todos):
     if pd:
         p.append(f"待办 {len(pd)} 项")
     if d == n and n > 0:
-        p.append("全部完成")
+        if c["cancelled"] == n:
+            p.append("全部取消")
+        else:
+            p.append("全部完成")
     return " | ".join(p)
 
 
@@ -257,7 +260,7 @@ def _update_state(todos):
         with open(sp, "r", encoding="utf-8") as f:
             state = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        state = {"slug": "unknown", "todos": [], "tags": []}
+        state = {"slug": "unknown", "todos": [], "tags": [], "title": "", "cwd": ""}
     old = state.get("todos", [])
     now = datetime.now().isoformat(timespec="seconds")
     ch = []
@@ -644,13 +647,15 @@ def _register_routes(context):
         with open(sp, "r", encoding="utf-8") as f:
             st = json.load(f)
         tds = st.get("todos", [])
-        logger.info(f"[task_scaffold] api_current → active=True, slug={st.get('slug')}, todos={len(tds)}")
+        logger.debug(f"[task_scaffold] api_current → active=True, slug={st.get('slug')}, todos={len(tds)}")
         if not tds:
             return jsonify({"active": False})
+        actual = [n for n in os.listdir(_cur()) if os.path.isfile(os.path.join(_cur(), n))]
         return jsonify({"active": True, "slug": st.get("slug"), "title": st.get("title", ""), "cwd": st.get("cwd", ""), "tags": st.get("tags", []),
                         "count": len(tds), "completed": sum(1 for t in tds if t.get("status") in ("completed", "cancelled")),
-                        "todos": tds, "files": ["00_task_state.json", "01_research.md", "02_design.md",
-                                                 "03_work_order.md", "progress.log"]})
+                        "todos": tds, "files": sorted(actual, key=lambda x: (
+                            {"00_task_state.json":0,"03_work_order.md":1,"02_design.md":2,"01_research.md":3,"progress.log":4}
+                        ).get(x, 99))})
 
     async def api_current_file(name):
         fp = os.path.join(_cur(), name)
@@ -821,6 +826,9 @@ class Main(star.Star):
             "仅在需要修改文件/提交代码时提醒用户切换到 build 模式——正常分析无需提及。"
         )
         try:
-            request.extra_user_content_parts = (request.extra_user_content_parts or []) + [note]
+            parts = (request.extra_user_content_parts or [])
+            if parts and "Plan 模式" in str(parts[-1]):
+                return
+            request.extra_user_content_parts = parts + [note]
         except Exception:
             pass

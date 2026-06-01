@@ -303,7 +303,7 @@ async function loadCurrent(){
   if(!cur||!cur.active){
     if(cur===null) console.warn('loadCurrent: get("/current") returned null');
     if(ST._lastActive){
-      cur=ST._lastActive; cur._stale=true;
+      cur={...ST._lastActive,_stale:true};
     }else{
       const tbody=document.getElementById('task-body');
       const thead=document.getElementById('task-header');
@@ -379,7 +379,11 @@ async function selectFile(name){
   items.forEach(el=>{if(el.textContent.trim()===name)el.classList.add('active')});
   document.getElementById('preview-title').textContent=name;
   let content='(加载中...)';
-  try{content=await getText('/current/file/'+encodeURIComponent(name));}catch(e){content='(无法加载)'}
+  try{
+    const slug=ST.current._stale?encodeURIComponent(ST.current.slug||''):'';
+    const p=slug?'/archive/'+slug+'/file/'+encodeURIComponent(name):'/current/file/'+encodeURIComponent(name);
+    content=await getText(p);
+  }catch(e){content='(无法加载)'}
   const pb=document.getElementById('preview-body');pb.textContent=content.slice(0,5000);pb.classList.add('fade');setTimeout(()=>pb.classList.remove('fade'),250);
 }
 
