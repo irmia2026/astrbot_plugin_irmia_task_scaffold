@@ -832,20 +832,14 @@ class Main(star.Star):
                         except Exception:
                             pass
                 logger.info(f"plan 模式屏蔽 {len(removed)} 个写工具: {removed[:8]}{'...' if len(removed)>8 else ''}")
-                msg = (
-                    f"\n\n[系统] 当前处于 plan（只读）模式。"
-                    f"以下写工具已禁用: {', '.join(removed[:5])}{'...' if len(removed)>5 else ''}。"
-                    f"如需执行写入操作，请在 WebUI 中将 Plan 切换为 Build。"
-                )
-                try:
-                    up = getattr(request, 'user_prompt', None) or getattr(request, 'prompt', '')
-                    if hasattr(request, 'user_prompt'):
-                        request.user_prompt = up + msg
-                    elif hasattr(request, 'prompt'):
-                        request.prompt = up + msg
-                    else:
-                        sp = request.system_prompt or ""
-                        if msg not in sp:
-                            request.system_prompt = sp + msg
-                except Exception:
-                    pass
+
+    @filter.on_decorating_result()
+    async def _on_decorating_result(self, event):
+        if _get_mode() != "plan":
+            return
+        note = "\n\n[系统] 当前处于 plan（只读）模式，写工具已禁用。需要执行写入操作请在 WebUI 切换为 Build。"
+        try:
+            result = event.get_result()
+            event.set_result(result + note)
+        except Exception:
+            pass
