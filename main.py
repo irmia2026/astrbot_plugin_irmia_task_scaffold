@@ -735,12 +735,18 @@ class Main(star.Star):
         context.add_llm_tools(TaskListTool(), TaskArchiveTool())
         _register_routes(context)
         if _get_mode() == "plan":
-            _set_mode("plan", context)
+            _set_mode("build", context)
+            logger.info("启动时检测到 plan 模式残留，已强制重置为 build 模式，所有工具已恢复")
+        else:
+            all_names = _get_all_tool_names(context)
+            logger.info(f"启动模式: build | 已注册 {len(all_names)} 个工具")
         logger.info("irmia_task_scaffold 已就绪 — task_list + task_archive + WebUI 仪表盘")
 
     @filter.on_using_llm_tool()
     async def _on_tool_call(self, event: AstrMessageEvent, tool, tool_args):
         name = tool.name if hasattr(tool, "name") else str(tool)
+        if _get_mode() == "plan" and name in ("file_write", "file_edit"):
+            raise RuntimeError("规划模式（plan）下写操作被拦截，请在 WebUI 任务面板右下角将 规划 切换为 施工 后重试。")
         detail = str(tool_args)[:80] if isinstance(tool_args, dict) else ""
         ts = ""
         if name == "task_list":
