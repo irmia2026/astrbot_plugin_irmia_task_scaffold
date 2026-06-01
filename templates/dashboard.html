@@ -19,7 +19,7 @@
   --spring: cubic-bezier(.34,1.56,.64,1); --ease: cubic-bezier(.4,0,.2,1);
 }
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;zoom:1.25}
+body{font-family:var(--font);background:var(--bg);color:var(--text);height:80vh;overflow:hidden;-webkit-font-smoothing:antialiased;zoom:1.25}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   background:radial-gradient(ellipse at 0% 30%,rgba(59,130,246,.04)0%,transparent 55%),
              radial-gradient(ellipse at 100% 70%,rgba(139,92,246,.03)0%,transparent 55%);}
@@ -55,7 +55,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-height:0}
 .panel-header{padding:8px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
 .panel-body{flex:1;overflow-y:auto;min-height:0}
-#task-panel{flex:1.5}
+#task-panel{flex:1}
 #live-panel{flex:1}
 
 .task-hero{padding:18px 22px}
