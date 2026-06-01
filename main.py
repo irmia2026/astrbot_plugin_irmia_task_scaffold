@@ -109,9 +109,9 @@ def _set_mode(mode: str, context=None):
         json.dump({"mode": mode}, f, ensure_ascii=False)
     if not context:
         return False
-    tool_map = _get_tool_map(context) if context else {}
-    if not tool_map:
-        tool_map = _TOOL_MAP_CACHE
+    tool_map = _TOOL_MAP_CACHE
+    if not tool_map and context:
+        tool_map = _get_tool_map(context)
     if not tool_map:
         logger.warning("_set_mode: 无法获取工具列表，工具状态未切换")
         return False
@@ -784,14 +784,13 @@ class Main(star.Star):
         _SELF_NAMES.update([tl.name, ta.name])
         context.add_llm_tools(tl, ta)
         _register_routes(context)
+        global _TOOL_MAP_CACHE
+        _TOOL_MAP_CACHE = _get_tool_map(context)
         if _get_mode() == "plan":
             _set_mode("build", context)
             logger.info("启动时检测到 plan 模式残留，已强制重置为 build 模式，所有工具已恢复")
         else:
-            tool_map = _get_tool_map(context)
-            logger.info(f"启动模式: build | 已注册 {len(tool_map)} 个工具")
-        global _TOOL_MAP_CACHE
-        _TOOL_MAP_CACHE = _get_tool_map(context) or _TOOL_MAP_CACHE
+            logger.info(f"启动模式: build | 已注册 {len(_TOOL_MAP_CACHE)} 个工具")
         self._tray_stop = None
         try:
             from . import tray
