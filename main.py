@@ -1,4 +1,5 @@
 import json, os, shutil
+import atexit
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -786,6 +787,15 @@ class Main(star.Star):
         else:
             tool_map = _get_tool_map(context)
             logger.info(f"启动模式: build | 已注册 {len(tool_map)} 个工具")
+        self._tray_stop = None
+        try:
+            from . import tray
+            self._tray_stop = tray.start()
+            if self._tray_stop:
+                atexit.register(lambda s=self._tray_stop: s.set())
+            logger.info("系统托盘已启动")
+        except Exception as e:
+            logger.warning(f"系统托盘启动失败（可能缺少 pystray）: {e}")
         logger.info("irmia_task_scaffold 已就绪 — task_list + task_archive + WebUI 仪表盘")
 
     @filter.on_using_llm_tool()
