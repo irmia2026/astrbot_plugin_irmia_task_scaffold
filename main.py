@@ -54,6 +54,7 @@ _WRITE_KEYWORDS = [
     "rollback", "unzip",
 ]
 _ALWAYS_WRITE = {"astrbot_execute_shell", "astrbot_execute_python"}
+_EXEMPT_TOOLS = {"task_list", "task_archive"}
 
 
 def _set_mode(mode: str, context=None):
@@ -806,11 +807,14 @@ class Main(star.Star):
         if _get_mode() != "plan":
             return
         funcs = getattr(request, 'functions', None) or getattr(request, 'tools', None) or getattr(request, 'func_tool', None)
+        removed = []
         if funcs:
             keep = []
-            removed = []
             for f in funcs:
                 name = getattr(f, 'name', '') or (f.get('name', '') if isinstance(f, dict) else '')
+                if name in _EXEMPT_TOOLS:
+                    keep.append(f)
+                    continue
                 desc = getattr(f, 'description', '') or (f.get('description', '') if isinstance(f, dict) else '')
                 if name in _ALWAYS_WRITE or any(kw in (desc.lower() if desc else '') for kw in _WRITE_KEYWORDS):
                     removed.append(name)
@@ -828,13 +832,20 @@ class Main(star.Star):
                         except Exception:
                             pass
                 logger.info(f"plan 模式屏蔽 {len(removed)} 个写工具: {removed[:8]}{'...' if len(removed)>8 else ''}")
-        note = (
-            "\n【Plan 模式】写操作已禁用。"
-            "仅在需要修改文件/提交代码时提醒用户切换到 build 模式——正常分析无需提及。"
-        )
-        try:
-            sp = request.system_prompt or ""
-            if note not in sp:
-                request.system_prompt = sp + note
-        except Exception:
-            pass
+                msg = (
+                    f"\n\n[系统] 当前处于 plan（只读）模式。"
+                    f"以下写工具已禁用: {', '.join(removed[:5])}{'...' if len(removed)>5 else ''}。"
+                    f"如需执行写入操作，请在 WebUI 中将 Plan 切换为 Build。"
+                )
+                try:
+                    up = getattr(request, 'user_prompt', None) or getattr(request, 'prompt', '')
+                    if hasattr(request, 'user_prompt'):
+                        request.user_prompt = up + msg
+                    elif hasattr(request, 'prompt'):
+                        request.prompt = up + msg
+                    else:
+                        sp = request.system_prompt or ""
+                        if msg not in sp:
+                            request.system_prompt = sp + msg
+                except Exception:
+                    pass
