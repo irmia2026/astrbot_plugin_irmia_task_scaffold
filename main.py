@@ -43,59 +43,65 @@ def _get_mode():
     return "build"
 
 
-_WRITABLE_EXPLICIT = [
-    "astrbot_execute_shell",
-    "safe_edit", "safe_rollback", "file_patch", "file_write", "file_remove",
-    "git_commit", "git_push", "file_zip", "file_unzip", "http_download",
-]
 _WRITE_PATTERNS = ["edit", "patch", "write", "remove", "delete", "commit", "push",
-                   "rollback", "download", "save", "create", "upload", "shell"]
+                   "rollback", "download", "save", "create", "upload", "shell",
+                   "execute", "exec_shell", "unzip", "zip_"]
+_SAFE_EXPLICIT = ["task_list", "task_archive"]
 
 
-def _collect_writable(context):
-    """收集所有需停用的写工具：显式名单 + 命名模式匹配。"""
-    names = set(_WRITABLE_EXPLICIT)
+def _is_write_tool(name: str) -> bool:
+    n = name.lower()
+    return any(p in n for p in _WRITE_PATTERNS)
+
+
+def _get_all_tool_names(context):
+    names = []
     try:
         mgr = getattr(context, 'get_llm_tool_manager', None)
         if mgr:
             m = mgr()
-            if hasattr(m, '_tools'):
-                for name in m._tools:
-                    if any(p in name.lower() for p in _WRITE_PATTERNS):
-                        names.add(name)
-            elif hasattr(m, 'tools'):
-                for name in m.tools:
-                    if any(p in name.lower() for p in _WRITE_PATTERNS):
-                        names.add(name)
+            src = getattr(m, '_tools', None) or getattr(m, 'tools', None) or {}
+            names = list(src.keys() if isinstance(src, dict) else src)
     except Exception:
         pass
-    return list(names)
+    return names
 
 
 def _set_mode(mode: str, context=None):
     os.makedirs(os.path.dirname(_mode_path()), exist_ok=True)
     with open(_mode_path(), "w", encoding="utf-8") as f:
         json.dump({"mode": mode}, f, ensure_ascii=False)
-    if context:
-        targets = _collect_writable(context)
-        if mode == "plan":
-            ok = []
-            for name in targets:
+    if not context:
+        return
+    all_names = _get_all_tool_names(context)
+    if not all_names:
+        return
+    if mode == "plan":
+        off = []
+        on = []
+        for name in all_names:
+            try:
+                context.deactivate_llm_tool(name)
+                off.append(name)
+            except Exception:
+                pass
+        for name in all_names:
+            if name in _SAFE_EXPLICIT or not _is_write_tool(name):
                 try:
-                    if context.deactivate_llm_tool(name):
-                        ok.append(name)
+                    context.activate_llm_tool(name)
+                    on.append(name)
                 except Exception:
                     pass
-            logger.info(f"plan 模式: 已停用 {len(ok)} 个写工具 — {', '.join(ok[:10])}{'...' if len(ok)>10 else ''}")
-        else:
-            ok = []
-            for name in targets:
-                try:
-                    if context.activate_llm_tool(name):
-                        ok.append(name)
-                except Exception:
-                    pass
-            logger.info(f"build 模式: 已启用 {len(ok)} 个写工具")
+        logger.info(f"plan 模式: 全禁 {len(off)} 工具 → 放行 {len(on)} 个读工具")
+    else:
+        on = []
+        for name in all_names:
+            try:
+                context.activate_llm_tool(name)
+                on.append(name)
+            except Exception:
+                pass
+        logger.info(f"build 模式: 已启用 {len(on)} 个工具")
 
 
 def _is_active():
