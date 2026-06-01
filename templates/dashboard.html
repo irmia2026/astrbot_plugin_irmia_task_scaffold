@@ -40,6 +40,12 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .nav-status .sdot{width:7px;height:7px;border-radius:50%;background:var(--emerald);box-shadow:0 0 0 3px var(--emerald-light);animation:dotLive 2s infinite}
 @keyframes dotLive{0%,100%{opacity:1}50%{opacity:.4}}
 
+#mode-bar{transition:all .3s}
+#mode-bar.plan{background:#eff6ff;border-color:#93c5fd}
+#mode-bar.build{background:var(--surface);border-color:var(--border)}
+#mode-dot.plan{background:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+#mode-dot.build{background:var(--emerald);box-shadow:0 0 0 3px rgba(16,185,129,.2)}
+
 #center-col{flex:1;display:flex;flex-direction:column;gap:6px;min-width:0}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-height:0}
 .panel-header{padding:8px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
@@ -188,6 +194,11 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </div>
 
 <div id="center-col">
+  <div id="mode-bar" style="display:flex;align-items:center;gap:8px;padding:6px 14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:0;font-size:11px;font-weight:600">
+    <span style="width:8px;height:8px;border-radius:50%;flex-shrink:0" id="mode-dot"></span>
+    <span id="mode-label">施工模式</span>
+    <button onclick="toggleMode()" style="margin-left:auto;padding:3px 10px;border:1px solid var(--border);border-radius:5px;background:var(--surface);cursor:pointer;font-size:10px;font-family:var(--font)">切换</button>
+  </div>
   <div class="panel" id="task-panel">
     <div class="panel-header" id="task-header">当前任务</div>
     <div class="panel-body" id="task-body">
@@ -420,14 +431,33 @@ async function loadActivity(){
   }catch(e){}
 }
 
+async function loadMode(){
+  try{const r=await fetch(API+'/mode');const m=await r.json();applyMode(m.mode||'build');}catch(e){}
+}
+
+function applyMode(m){
+  const bar=document.getElementById('mode-bar');
+  const dot=document.getElementById('mode-dot');
+  const label=document.getElementById('mode-label');
+  bar.className=m;dot.className=m;
+  label.textContent=m==='plan'?'规划模式（只读）':'施工模式';
+  ST._mode=m;
+}
+
+async function toggleMode(){
+  const m=ST._mode==='plan'?'build':'plan';
+  try{await fetch(API+'/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})});applyMode(m);}catch(e){}
+}
+
 setInterval(()=>{
   document.getElementById('nav-time').textContent=' · '+ts();
-  if(typeof E==='undefined'||API!=='__EMBEDDED__'){loadCurrent();loadActivity();}
+  if(typeof E==='undefined'||API!=='__EMBEDDED__'){loadCurrent();loadActivity();loadMode();}
 },3000);
 
 loadCurrent();
 loadArchives();
 loadActivity();
+loadMode();
 </script>
 </body>
 </html>

@@ -28,6 +28,27 @@ def _arc():
     return os.path.join(_root(), "archive")
 
 
+def _mode_path():
+    return os.path.join(_root(), "state", "mode.json")
+
+
+def _get_mode():
+    mp = _mode_path()
+    try:
+        if os.path.isfile(mp):
+            with open(mp, "r", encoding="utf-8") as f:
+                return json.load(f).get("mode", "build")
+    except Exception:
+        pass
+    return "build"
+
+
+def _set_mode(mode: str):
+    os.makedirs(os.path.dirname(_mode_path()), exist_ok=True)
+    with open(_mode_path(), "w", encoding="utf-8") as f:
+        json.dump({"mode": mode}, f, ensure_ascii=False)
+
+
 def _is_active():
     sp = os.path.join(_cur(), "00_task_state.json")
     if not os.path.isfile(sp):
@@ -317,6 +338,9 @@ class TaskListTool(_FT):
     async def call(self, context, action: str, todos: list = None, workspace_slug: str = "", tags: list = None, title: str = "") -> str:
         try:
             active = _is_active()
+            mode = _get_mode()
+            if action in ("start", "update", "complete") and mode == "plan":
+                return _err("当前为规划模式，禁止写操作。请在 WebUI 中切换到施工模式后再执行。")
             if action == "status":
                 if not active:
                     return json.dumps({"ok": True, "status": "idle", "summary": "IDLE — 无活跃任务"}, ensure_ascii=False)
@@ -502,7 +526,7 @@ def _load_dashboard():
 
 
 def _register_routes(context):
-    from quart import Response, jsonify
+    from quart import Response, jsonify, request as qr
 
     _DASHBOARD_HTML = _load_dashboard()
 
@@ -607,12 +631,29 @@ def _register_routes(context):
                         pass
         return jsonify(lines[-20:])
 
+    async def api_mode_get():
+        return jsonify({"mode": _get_mode()})
+
+    async def api_mode_set():
+        try:
+            body = await qr.get_json()
+            m = body.get("mode", "") if body else ""
+        except Exception:
+            m = ""
+        if m not in ("plan", "build"):
+            return jsonify({"ok": False, "error": "mode 必须是 plan 或 build"})
+        _set_mode(m)
+        _log_activity("System", "系统", f"模式切换 → {m}")
+        return jsonify({"ok": True, "mode": m})
+
     _ROUTES = [
         ("/task_scaffold/dashboard", dashboard, ["GET"], "任务工作台 HTML"),
         ("/task_scaffold/api/current", api_current, ["GET"], "当前任务 JSON"),
         ("/task_scaffold/api/current/file/<name>", api_current_file, ["GET"], "当前任务文件内容"),
         ("/task_scaffold/api/archives", api_archives, ["GET"], "归档列表 JSON"),
         ("/task_scaffold/api/activity", api_activity, ["GET"], "实时活动 JSONL"),
+        ("/task_scaffold/api/mode", api_mode_get, ["GET"], "当前模式 JSON"),
+        ("/task_scaffold/api/mode", api_mode_set, ["POST"], "切换模式"),
         ("/task_scaffold/api/archive/<slug>/summary", api_archive_summary, ["GET"], "归档摘要 JSON"),
         ("/task_scaffold/api/archive/<slug>/file/<name>", api_archive_file, ["GET"], "归档文件内容"),
     ]
