@@ -232,11 +232,11 @@ def _workorder(todos, slug):
     return "\n".join(L) + "\n"
 
 
-def _init_ws(todos, slug, tags=None, title=""):
+def _init_ws(todos, slug, tags=None, title="", cwd=""):
     cur = _cur()
     os.makedirs(cur, exist_ok=True)
     now = datetime.now().isoformat(timespec="seconds")
-    st = {"slug": slug, "updated_at": now, "todos": todos, "tags": tags or [], "title": title or todos[0]["content"][:60] if todos else ""}
+    st = {"slug": slug, "updated_at": now, "todos": todos, "tags": tags or [], "title": title or todos[0]["content"][:60] if todos else "", "cwd": cwd}
     with open(os.path.join(cur, "00_task_state.json"), "w", encoding="utf-8") as f:
         json.dump(st, f, ensure_ascii=False, indent=2)
     with open(os.path.join(cur, "01_research.md"), "w", encoding="utf-8") as f:
@@ -388,7 +388,8 @@ _TASK_LIST_PARAMS = {
             },
         },
         "workspace_slug": {"type": "string", "description": "可选。start 时指定工作空间目录名，如 '2026-05-31_REV-008'"},
-        "title": {"type": "string", "description": "可选。任务标题（总结性名称）。不指定则取第一条 todo 的 content"},
+        "title": {"type": "string", "description": "可选。任务标题"},
+        "cwd": {"type": "string", "description": "可选。当前工作目录路径，如 'D:/project'"},
         "tags": {"type": "array", "items": {"type": "string"}, "description": "可选。标签列表，仅 start 时生效。如 ['devkit','debug']"},
     },
     "required": ["action"],
@@ -426,7 +427,7 @@ class TaskListTool(_FT):
     description: str = _TASK_LIST_DESC
     parameters: dict = field(default_factory=lambda: _TASK_LIST_PARAMS)
 
-    async def call(self, context, action: str, todos: list = None, workspace_slug: str = "", tags: list = None, title: str = "") -> str:
+    async def call(self, context, action: str, todos: list = None, workspace_slug: str = "", tags: list = None, title: str = "", cwd: str = "") -> str:
         try:
             active = _is_active()
             mode = _get_mode()
@@ -451,7 +452,7 @@ class TaskListTool(_FT):
                 if e:
                     return _err(e)
                 slug = _gen_slug(workspace_slug or None)
-                fs = _init_ws(todos, slug, tags, title)
+                fs = _init_ws(todos, slug, tags, title, cwd)
                 return _ok(todos, summary=_summary(todos), workspace="task_scaffolds/current/",
                            files=fs, action="workspace_created", slug=slug)
 
@@ -463,7 +464,7 @@ class TaskListTool(_FT):
                     return _err(e)
                 if not active:
                     slug = _gen_slug(workspace_slug or None)
-                    fs = _init_ws(todos, slug)
+                    fs = _init_ws(todos, slug, cwd=cwd)
                     return _ok(todos, summary=_summary(todos), workspace="task_scaffolds/current/",
                                files=fs, action="workspace_created_implicit", slug=slug)
                 _update_state(todos)
@@ -646,7 +647,7 @@ def _register_routes(context):
         logger.info(f"[task_scaffold] api_current → active=True, slug={st.get('slug')}, todos={len(tds)}")
         if not tds:
             return jsonify({"active": False})
-        return jsonify({"active": True, "slug": st.get("slug"), "title": st.get("title", ""), "tags": st.get("tags", []),
+        return jsonify({"active": True, "slug": st.get("slug"), "title": st.get("title", ""), "cwd": st.get("cwd", ""), "tags": st.get("tags", []),
                         "count": len(tds), "completed": sum(1 for t in tds if t.get("status") in ("completed", "cancelled")),
                         "todos": tds, "files": ["00_task_state.json", "01_research.md", "02_design.md",
                                                  "03_work_order.md", "progress.log"]})
