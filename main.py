@@ -341,7 +341,7 @@ class TaskListTool(_FT):
             active = _is_active()
             mode = _get_mode()
             if action in ("start", "update", "complete") and mode == "plan":
-                return _err("当前为规划模式，禁止写操作。请在 WebUI 中切换到施工模式后再执行。")
+                return _err("当前为规划模式（plan），写操作已锁定。请在 WebUI 中将 规划 切换为 施工 后重试。")
             if action == "status":
                 if not active:
                     return json.dumps({"ok": True, "status": "idle", "summary": "IDLE — 未进入长任务模式"}, ensure_ascii=False)
@@ -710,10 +710,13 @@ class Main(star.Star):
         if _get_mode() != "plan":
             return
         ban = (
-            "\n\n【系统通知】当前为规划模式（plan），已禁止一切写操作。\n"
-            "以下工具已被锁定：safe_edit、file_patch、file_remove、git_commit、git_push、\n"
-            "file_write、http_download、file_zip 及任何修改文件系统或 Git 的操作。\n"
-            "你只能进行读取、分析、规划和检索。如确认需要施工，请提示用户在 WebUI 中切换到 build 模式。"
+            "\n\n【系统指令 · 规划模式】\n"
+            "当前处于 plan（规划）模式，所有写操作已被系统锁定。\n"
+            "禁止调用: safe_edit, file_patch, file_remove, git_commit, git_push, file_write, "
+            "http_download, file_zip 及任何修改文件/Git 的工具。\n"
+            "你只能执行读取、分析、规划、检索操作。\n"
+            "当用户要求做写操作时，你必须回复：\n"
+            "「当前处于规划模式，写操作已锁定。请在 WebUI 任务面板右下角将 规划 切换为 施工 后我再执行。」"
         )
         sp = request.system_prompt or ""
         request.system_prompt = sp + ban
