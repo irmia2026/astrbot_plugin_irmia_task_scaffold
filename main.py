@@ -4,7 +4,6 @@ from datetime import datetime
 
 from astrbot.api import FunctionTool as _FT, logger, star
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.core.star.register import register_on_llm_request
 
 _VS = {"pending", "in_progress", "completed", "cancelled"}
 
@@ -44,10 +43,29 @@ def _get_mode():
     return "build"
 
 
-def _set_mode(mode: str):
+_WRITABLE_TOOLS = [
+    "safe_edit", "safe_rollback", "file_patch", "file_write", "file_remove",
+    "git_commit", "git_push", "file_zip", "file_unzip", "http_download",
+]
+
+
+def _set_mode(mode: str, context=None):
     os.makedirs(os.path.dirname(_mode_path()), exist_ok=True)
     with open(_mode_path(), "w", encoding="utf-8") as f:
         json.dump({"mode": mode}, f, ensure_ascii=False)
+    if context:
+        if mode == "plan":
+            for name in _WRITABLE_TOOLS:
+                try:
+                    context.deactivate_llm_tool(name)
+                except Exception:
+                    pass
+        else:
+            for name in _WRITABLE_TOOLS:
+                try:
+                    context.activate_llm_tool(name)
+                except Exception:
+                    pass
 
 
 def _is_active():
@@ -643,7 +661,7 @@ def _register_routes(context):
             m = ""
         if m not in ("plan", "build"):
             return jsonify({"ok": False, "error": "mode 必须是 plan 或 build"})
-        _set_mode(m)
+        _set_mode(m, context)
         _log_activity("System", "系统", f"模式切换 → {m}")
         return jsonify({"ok": True, "mode": m})
 
@@ -680,6 +698,8 @@ class Main(star.Star):
         super().__init__(context)
         context.add_llm_tools(TaskListTool(), TaskArchiveTool())
         _register_routes(context)
+        if _get_mode() == "plan":
+            _set_mode("plan", context)
         logger.info("irmia_task_scaffold 已就绪 — task_list + task_archive + WebUI 仪表盘")
 
     @filter.on_using_llm_tool()
@@ -704,21 +724,3 @@ class Main(star.Star):
     @filter.on_agent_done()
     async def _on_done(self, event: AstrMessageEvent, run_context, resp):
         _log_activity("Miria", "待命中", "—")
-
-    @register_on_llm_request()
-    async def _on_llm_req(self, event, request) -> None:
-        if _get_mode() != "plan":
-            return
-        ban = (
-            "\n\n【系统指令 · 规划模式】\n"
-            "当前处于 plan（规划）模式，所有写操作已被系统锁定。\n"
-            "禁止调用任何会修改文件内容、创建/删除文件、执行 git commit/push、"
-            "下载文件到磁盘的工具。\n"
-            "你只能执行读取、分析、规划、检索操作。\n"
-            "当用户要求做写操作时，你必须回复：\n"
-            "「当前处于规划模式，写操作已锁定。请在 WebUI 任务面板右下角将 规划 切换为 施工 后我再执行。」"
-        )
-        try:
-            request.extra_user_content_parts = (request.extra_user_content_parts or []) + [ban]
-        except Exception:
-            pass
