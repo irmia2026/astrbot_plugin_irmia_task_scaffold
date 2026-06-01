@@ -44,28 +44,61 @@ def _get_mode():
     return "build"
 
 
-_WRITE_PATTERNS = ["edit", "patch", "write", "remove", "delete", "commit", "push",
-                   "rollback", "download", "save", "create", "upload", "shell",
-                   "execute", "unzip", "zip"]
-_SAFE_EXPLICIT = ["task_list", "task_archive"]
+_READ_MARKERS = [
+    "read",     "query",    "get",     "list",
+    "view",     "preview",  "search",  "check",
+    "display",  "show",     "compare", "parse",
+    "calculate","convert",  "test",    "extract",
+    "render",   "status",   "log",     "diff",
+    "hash",     "validate", "scan",    "strip",
+    "filter",   "encode",   "decode",  "统计",
+    "查询",     "预览",     "搜索",    "检查",
+    "解析",     "校验",
+]
 
 
-def _is_write_tool(name: str) -> bool:
-    n = name.lower()
-    return any(p in n for p in _WRITE_PATTERNS)
+def _is_read_tool(tool) -> bool:
+    name = getattr(tool, 'name', '') or ''
+    desc = getattr(tool, 'description', '') or ''
+    text = (name + " " + desc).lower()
+    return any(m in text for m in _READ_MARKERS)
 
 
-def _get_all_tool_names(context):
-    names = []
+def _is_self_tool(tool) -> bool:
+    mod = getattr(tool, 'handler_module_path', '') or ''
+    if mod and mod.startswith(_PLUGIN_DIR):
+        return True
+    name = getattr(tool, 'name', '')
+    if name in _SELF_NAMES:
+        return True
+    return False
+
+
+_SELF_NAMES = set()
+
+
+def _is_plan_safe(tool) -> bool:
+    return _is_self_tool(tool) or _is_read_tool(tool)
+
+
+def _get_tool_map(context):
+    """返回 {name: tool_object} 映射。"""
+    tools = {}
     try:
         mgr = getattr(context, 'get_llm_tool_manager', None)
         if mgr:
             m = mgr()
             src = getattr(m, '_tools', None) or getattr(m, 'tools', None) or {}
-            names = list(src.keys() if isinstance(src, dict) else src)
+            if isinstance(src, dict):
+                tools = dict(src)
+            else:
+                for t in src:
+                    n = getattr(t, 'name', '') or str(t)
+                    if n:
+                        tools[n] = t
     except Exception:
         pass
-    return names
+    return tools
 
 
 def _set_mode(mode: str, context=None):
@@ -74,30 +107,30 @@ def _set_mode(mode: str, context=None):
         json.dump({"mode": mode}, f, ensure_ascii=False)
     if not context:
         return False
-    all_names = _get_all_tool_names(context)
-    if not all_names:
+    tool_map = _get_tool_map(context)
+    if not tool_map:
         logger.warning("_set_mode: 无法获取工具列表，工具状态未切换")
         return False
     if mode == "plan":
         off = []
         on = []
-        for name in all_names:
+        for name, tool in tool_map.items():
             try:
                 context.deactivate_llm_tool(name)
                 off.append(name)
             except Exception:
                 pass
-        for name in all_names:
-            if name in _SAFE_EXPLICIT or not _is_write_tool(name):
+        for name, tool in tool_map.items():
+            if _is_plan_safe(tool):
                 try:
                     context.activate_llm_tool(name)
                     on.append(name)
                 except Exception:
                     pass
-        logger.info(f"plan 模式: 全禁 {len(off)} 工具 → 放行 {len(on)} 个读工具")
+        logger.info(f"plan 模式: 全禁 {len(off)} → 放行 {len(on)} 个读工具")
     else:
         on = []
-        for name in all_names:
+        for name in tool_map:
             try:
                 context.activate_llm_tool(name)
                 on.append(name)
@@ -736,14 +769,17 @@ def _register_routes(context):
 class Main(star.Star):
     def __init__(self, context, config=None):
         super().__init__(context)
-        context.add_llm_tools(TaskListTool(), TaskArchiveTool())
+        tl = TaskListTool()
+        ta = TaskArchiveTool()
+        _SELF_NAMES.update([tl.name, ta.name])
+        context.add_llm_tools(tl, ta)
         _register_routes(context)
         if _get_mode() == "plan":
             _set_mode("build", context)
             logger.info("启动时检测到 plan 模式残留，已强制重置为 build 模式，所有工具已恢复")
         else:
-            all_names = _get_all_tool_names(context)
-            logger.info(f"启动模式: build | 已注册 {len(all_names)} 个工具")
+            tool_map = _get_tool_map(context)
+            logger.info(f"启动模式: build | 已注册 {len(tool_map)} 个工具")
         logger.info("irmia_task_scaffold 已就绪 — task_list + task_archive + WebUI 仪表盘")
 
     @filter.on_using_llm_tool()
