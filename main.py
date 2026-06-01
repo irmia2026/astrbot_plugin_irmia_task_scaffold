@@ -4,6 +4,7 @@ from datetime import datetime
 
 from astrbot.api import FunctionTool as _FT, logger, star
 from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.core.star.register import register_on_llm_request
 
 _VS = {"pending", "in_progress", "completed", "cancelled"}
 
@@ -773,3 +774,16 @@ class Main(star.Star):
     @filter.on_agent_done()
     async def _on_done(self, event: AstrMessageEvent, run_context, resp):
         _log_activity("Miria", "待命中", "—")
+
+    @register_on_llm_request()
+    async def _on_llm_req(self, event, request) -> None:
+        if _get_mode() != "plan":
+            return
+        note = (
+            "\n【plan 模式】写操作已禁用。"
+            "仅在需要修改文件/提交代码时提醒用户切换到 build 模式——正常分析无需提及。"
+        )
+        try:
+            request.extra_user_content_parts = (request.extra_user_content_parts or []) + [note]
+        except Exception:
+            pass
