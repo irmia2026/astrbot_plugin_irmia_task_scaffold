@@ -224,7 +224,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   </div>
   <div class="panel" id="live-panel">
     <div class="live-header-row"><span class="live-title">实时活动</span><span class="live-dot"></span></div>
-    <div class="panel-body" id="live-body"><div class="empty-state"><div class="empty-box"></div><h4>等待长任务活动...</h4></div></div>
+    <div class="panel-body" id="live-body" style="display:flex;align-items:center;justify-content:center"><div class="empty-state"><div class="empty-box"></div><h4>等待长任务活动...</h4></div></div>
   </div>
   <div class="panel" id="archive-panel" style="display:none;flex:1">
     <div class="panel-header">已归档长任务</div>
@@ -450,7 +450,7 @@ async function loadActivity(){
       const st=(a.status||'');const cls=st==='执行中'?'exec':st==='回复中'?'reply':st==='待命中'?'think':st==='阅读中'?'read':'think';
       h+='<div class="live-row slide-in"><span class="lr-ts">'+(a.ts||'').slice(0,8)+'</span><span class="lr-dot '+cls+'"></span><div class="lr-body"><span class="lr-agent">'+(a.agent||'')+'</span> <span class="lr-detail">'+esc(a.detail||'')+'</span></div></div>';
     });
-    if(h) lb.insertAdjacentHTML('afterbegin', h);
+    if(h){lb.insertAdjacentHTML('afterbegin', h);lb.style.display='';lb.style.alignItems='';lb.style.justifyContent='';}
     const es = lb.querySelector('.empty-state'); if(es) es.remove();
     if(_rendered.size>500){const arr=[..._rendered];_rendered=new Set(arr.slice(-300));}
   }catch(e){}
