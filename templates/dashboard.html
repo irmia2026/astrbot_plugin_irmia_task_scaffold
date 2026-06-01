@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -327,7 +327,7 @@ async function loadCurrent(){
   const tbody=document.getElementById('task-body');
   tbody.style.display='';tbody.style.alignItems='';tbody.style.justifyContent='';
   const thead=document.getElementById('task-header');
-  tbody.innerHTML=_skelTask();
+  if(!ST.current._stale) tbody.innerHTML=_skelTask();
   const td=ST.current.todos||[]; const n=td.length;
   const comp=ST.current.completed||0; const pct=n?Math.round(comp/n*100):0;
   const ip=td.find(t=>t.status==='in_progress');
@@ -417,16 +417,45 @@ function renderArchive(){
   });
   let h='';
   Object.keys(groups).sort().reverse().forEach(m=>{
-    h+='<div class="arc-group open"><div class="arc-group-head" onclick="this.parentElement.classList.toggle(\'open\')"><div class="arc-group-icon"></div><div><div class="arc-group-name">'+m+'</div><div class="arc-group-count">'+groups[m].length+' 个归档</div></div><span class="arc-group-arr"></span></div>';
+    h+='<div class="arc-group open"><div class="arc-group-head" onclick="this.parentElement.classList.toggle(\'open\')"><div class="arc-group-icon">��</div><div><div class="arc-group-name">'+m+'</div><div class="arc-group-count">'+groups[m].length+' 个归档</div></div><span class="arc-group-arr"></span></div>';
     h+='<div class="arc-items">';
     groups[m].forEach(a=>{
       const done=a.completed===a.count;
-      h+='<div class="arc-item" onclick="this.classList.toggle(\'open\')"><div class="arc-item-head"><div><div class="arc-item-title">'+esc(a.slug||'')+'</div><div class="arc-item-meta"><span class="arc-item-badge '+(done?'done':'partial')+'">'+(done?' 完成':(a.completed||0)+'/'+(a.count||0))+'</span> · '+(a.completed_at||'').slice(0,10)+'</div></div><span style="color:var(--muted);font-size:9px"></span></div><div class="arc-item-detail">'+esc(a.summary||'')+'</div></div>';
+      const sid=('ad-'+a.slug).replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g,'-');
+      h+='<div class="arc-item" onclick="loadArchiveDetail(\''+esc(a.slug||'')+'\',this)"><div class="arc-item-head"><div><div class="arc-item-title">'+esc(a.slug||'')+'</div><div class="arc-item-meta"><span class="arc-item-badge '+(done?'done':'partial')+'">'+(done?' 完成':(a.completed||0)+'/'+(a.count||0))+'</span> · '+(a.completed_at||'').slice(0,10)+'</div></div><span style="color:var(--muted);font-size:9px"></span></div><div class="arc-item-detail" id="'+sid+'"></div></div>';
     });
     h+='</div></div>';
   });
   if(!h) h='<div class="empty-state"><div class="empty-box"></div><h4>没有找到匹配的归档</h4></div>';
   document.getElementById('archive-list').innerHTML=h;
+}
+
+async function loadArchiveDetail(slug, el){
+  el.classList.toggle('open');
+  if(el.dataset.loaded) return;
+  el.dataset.loaded='1';
+  const detailEl=el.querySelector('.arc-item-detail');
+  if(!detailEl) return;
+  try{
+    const data=await get('/archive/'+encodeURIComponent(slug)+'/summary');
+    if(!data||!data.todos){detailEl.textContent='(无数据)';return;}
+    let h='';
+    const icons={completed:'✅',cancelled:'❌',in_progress:'⏳',pending:'⬜'};
+    data.todos.forEach(t=>{h+='<div style="font-size:11px;padding:2px 0">'+(icons[t.status]||'⬜')+' '+esc(t.content||'')+'</div>'});
+    if(data.files){
+      h+='<div style="margin-top:6px;font-size:10px;color:var(--muted)">工作区文件:</div>';
+      data.files.forEach(f=>{h+='<div style="font-size:10px;cursor:pointer;color:var(--blue)" onclick="event.stopPropagation();viewArchiveFile(\''+esc(slug)+'\',\''+esc(f)+'\')"> '+esc(f)+'</div>'});
+    }
+    detailEl.innerHTML=h;
+  }catch(e){detailEl.textContent='(加载失败)'}
+}
+
+async function viewArchiveFile(slug, name){
+  try{
+    const content=await getText('/archive/'+encodeURIComponent(slug)+'/file/'+encodeURIComponent(name));
+    document.getElementById('preview-title').textContent=name;
+    document.getElementById('preview-body').textContent=content.slice(0,5000);
+  }catch(e){}
 }
 
 function filterArchiveCat(cat){
