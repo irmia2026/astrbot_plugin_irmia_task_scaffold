@@ -89,12 +89,7 @@ def _get_tool_map(context):
     if not context:
         logger.warning("_get_tool_map: context is None")
         return tools
-    mgr = None
-    for attr in ('get_llm_tool_manager', 'get_tool_manager', 'get_func_tool_manager', '_tool_manager'):
-        mgr = getattr(context, attr, None)
-        if mgr:
-            logger.debug(f"_get_tool_map: found manager via context.{attr}")
-            break
+    mgr = getattr(context, 'get_llm_tool_manager', None)
     if not mgr:
         logger.warning("_get_tool_map: no tool manager found on context")
         return tools
@@ -104,13 +99,19 @@ def _get_tool_map(context):
         logger.warning(f"_get_tool_map: mgr() failed: {e}")
         return tools
     src = None
-    for attr in ('_tools', 'tools', '_func_tools', 'func_tools', '_tool_map', 'builtin_func_list'):
-        src = getattr(m, attr, None)
-        if src is not None:
-            logger.debug(f"_get_tool_map: found tools via .{attr}, type={type(src).__name__}")
-            break
+    for attr in dir(m):
+        if attr.startswith('_') or attr in ('activate_llm_tool', 'deactivate_llm_tool', 'add_func', 'active'):
+            continue
+        try:
+            v = getattr(m, attr)
+        except Exception:
+            continue
+        if isinstance(v, dict) and v:
+            src = v; break
+        if isinstance(v, (list, tuple)) and v and hasattr(v[0], 'name'):
+            src = v; break
     if src is None:
-        logger.warning(f"_get_tool_map: no tool container found. m attrs: {[a for a in dir(m) if not a.startswith('__')][:20]}")
+        logger.warning(f"_get_tool_map: no tool container found. m attrs: {[a for a in dir(m) if not a.startswith('__')]}")
         return tools
     if isinstance(src, dict):
         tools = dict(src)
