@@ -207,7 +207,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 </div>
 
 <div id="center-col">
-  <div class="cwd-bar" id="cwd-bar">当前工作目录：<span class="cwd-path" id="cwd-text">未设置</span></div>
+  <div class="cwd-bar" id="cwd-bar">当前工作目录：<span class="cwd-path" id="cwd-text">未开始工作</span></div>
   <div class="panel" id="task-panel">
     <div class="panel-header" id="task-header">当前长任务</div>
     <div class="task-status-bar" id="task-status-bar" style="display:none"></div>
@@ -313,6 +313,7 @@ async function loadCurrent(){
       document.getElementById('file-nav-items').innerHTML='';
       document.getElementById('preview-body').textContent='';
       document.getElementById('task-status-bar').style.display='none';
+      document.getElementById('cwd-text').textContent='未开始工作';
       return;
     }
   }
@@ -336,8 +337,8 @@ async function loadCurrent(){
   if(ST.current._stale) thead.textContent+=' (已归档)';
   const bar=document.getElementById('cwd-bar');
   const ct=document.getElementById('cwd-text');
-  if(ST.current.cwd){ct.textContent=ST.current.cwd;bar.style.display='flex'}
-  else{ct.textContent='未设置'}
+  if(ST.current.cwd){ct.textContent=ST.current.cwd}
+  else{ct.textContent='未开始工作'}
   let h='<div class="task-hero">';
   h+='<div class="task-hero-title">'+esc(taskTitle.slice(0,60))+'</div>';
   h+='<div class="task-hero-meta">'+(n)+' 项任务</div>';
