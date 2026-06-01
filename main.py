@@ -87,7 +87,7 @@ def _summary(todos):
     if pd:
         p.append(f"待办 {len(pd)} 项")
     if d == n and n > 0:
-        p.append("全部完成，请调 complete")
+        p.append("全部完成")
     return " | ".join(p)
 
 
@@ -120,11 +120,11 @@ def _workorder(todos, slug):
     return "\n".join(L) + "\n"
 
 
-def _init_ws(todos, slug, tags=None):
+def _init_ws(todos, slug, tags=None, title=""):
     cur = _cur()
     os.makedirs(cur, exist_ok=True)
     now = datetime.now().isoformat(timespec="seconds")
-    st = {"slug": slug, "updated_at": now, "todos": todos, "tags": tags or []}
+    st = {"slug": slug, "updated_at": now, "todos": todos, "tags": tags or [], "title": title or todos[0]["content"][:60] if todos else ""}
     with open(os.path.join(cur, "00_task_state.json"), "w", encoding="utf-8") as f:
         json.dump(st, f, ensure_ascii=False, indent=2)
     with open(os.path.join(cur, "01_research.md"), "w", encoding="utf-8") as f:
@@ -275,6 +275,7 @@ _TASK_LIST_PARAMS = {
             },
         },
         "workspace_slug": {"type": "string", "description": "可选。start 时指定工作空间目录名，如 '2026-05-31_REV-008'"},
+        "title": {"type": "string", "description": "可选。任务标题（总结性名称）。不指定则取第一条 todo 的 content"},
         "tags": {"type": "array", "items": {"type": "string"}, "description": "可选。标签列表，仅 start 时生效。如 ['devkit','debug']"},
     },
     "required": ["action"],
@@ -307,7 +308,7 @@ class TaskListTool(_FT):
     description: str = _TASK_LIST_DESC
     parameters: dict = field(default_factory=lambda: _TASK_LIST_PARAMS)
 
-    async def call(self, context, action: str, todos: list = None, workspace_slug: str = "", tags: list = None) -> str:
+    async def call(self, context, action: str, todos: list = None, workspace_slug: str = "", tags: list = None, title: str = "") -> str:
         try:
             active = _is_active()
             if action == "status":
@@ -329,7 +330,7 @@ class TaskListTool(_FT):
                 if e:
                     return _err(e)
                 slug = _gen_slug(workspace_slug or None)
-                fs = _init_ws(todos, slug, tags)
+                fs = _init_ws(todos, slug, tags, title)
                 return _ok(todos, summary=_summary(todos), workspace="task_scaffolds/current/",
                            files=fs, action="workspace_created", slug=slug)
 
@@ -347,13 +348,29 @@ class TaskListTool(_FT):
                 _update_state(todos)
                 done = all(t.get("status") in ("completed", "cancelled") for t in todos)
                 if done:
-                    return _ok(todos, summary="全部完成 — 请调用 action='complete' 生成汇报",
-                               workspace="task_scaffolds/current/", action="all_done")
+                    arc = _do_archive()
+                    sl = arc.get("slug", "unknown") if arc else "unknown"
+                    return _ok(todos, summary=f"全部完成 — 已归档到 archive/{sl}/",
+                               workspace=f"task_scaffolds/archive/{sl}/", action="archived")
                 return _ok(todos, summary=_summary(todos), workspace="task_scaffolds/current/", action="state_updated")
 
             if action == "complete":
                 if not active:
-                    return _err("无活跃任务")
+                    arc_dir = _arc()
+                    if os.path.isdir(arc_dir):
+                        dirs = sorted([d for d in os.listdir(arc_dir) if os.path.isdir(os.path.join(arc_dir, d))], reverse=True)
+                        if dirs:
+                            sp = os.path.join(arc_dir, dirs[0], "00_task_state.json")
+                            if os.path.isfile(sp):
+                                with open(sp, "r", encoding="utf-8") as f:
+                                    st = json.load(f)
+                                tds = st.get("todos", [])
+                                slug = st.get("slug", dirs[0])
+                                report = _gen_report(tds, slug)
+                                return json.dumps({"ok": True, "report": report,
+                                                   "archive_path": f"task_scaffolds/archive/{slug}/",
+                                                   "summary": f"已归档: {slug}", "action": "completed"}, ensure_ascii=False)
+                    return _err("无活跃任务且无归档记录")
                 sp = os.path.join(_cur(), "00_task_state.json")
                 with open(sp, "r", encoding="utf-8") as f:
                     st = json.load(f)
@@ -503,7 +520,7 @@ def _register_routes(context):
         logger.info(f"[task_scaffold] api_current → active=True, slug={st.get('slug')}, todos={len(tds)}")
         if not tds:
             return jsonify({"active": False})
-        return jsonify({"active": True, "slug": st.get("slug"), "tags": st.get("tags", []),
+        return jsonify({"active": True, "slug": st.get("slug"), "title": st.get("title", ""), "tags": st.get("tags", []),
                         "count": len(tds), "completed": sum(1 for t in tds if t.get("status") in ("completed", "cancelled")),
                         "todos": tds, "files": ["00_task_state.json", "01_research.md", "02_design.md",
                                                  "03_work_order.md", "progress.log"]})

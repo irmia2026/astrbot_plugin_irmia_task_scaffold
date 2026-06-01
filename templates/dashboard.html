@@ -224,7 +224,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 <script>
 var API='/api/plug/task_scaffold/api';
-let ST={current:null,archives:[],activeCat:'all',files:{},_cacheAct:'',_cacheCur:''},_rendered=new Set();
+let ST={current:null,archives:[],activeCat:'all',files:{},_cacheAct:'',_cacheCur:'',_lastActive:null},_rendered=new Set();
 
 async function get(path){
   if(typeof E!=='undefined'&&API==='__EMBEDDED__'){
@@ -274,17 +274,25 @@ async function loadCurrent(){
   try{cur=await get('/current');}catch(e){console.error('loadCurrent failed',e);return;}
   if(!cur||!cur.active){
     if(cur===null) console.warn('loadCurrent: get("/current") returned null');
-    const tbody=document.getElementById('task-body');
-    const thead=document.getElementById('task-header');
-    thead.textContent='当前任务';
-    tbody.innerHTML='<div class="empty-state"><div class="empty-house"></div><h4>无活跃任务</h4><p>对 Agent 说要做什么即可</p></div>';
-    document.getElementById('file-nav-items').innerHTML='';
-    document.getElementById('preview-body').textContent='';
-    return;
+    if(ST._lastActive){
+      cur=ST._lastActive; cur._stale=true;
+    }else{
+      const tbody=document.getElementById('task-body');
+      const thead=document.getElementById('task-header');
+      thead.textContent='当前任务';
+      tbody.innerHTML='<div class="empty-state"><div class="empty-house"></div><h4>无活跃任务</h4><p>对 Agent 说要做什么即可</p></div>';
+      document.getElementById('file-nav-items').innerHTML='';
+      document.getElementById('preview-body').textContent='';
+      return;
+    }
   }
-  const curStr=JSON.stringify(cur);
-  if(curStr===ST._cacheCur)return;
-  ST._cacheCur=curStr;ST.current=cur;
+  if(!cur._stale){
+    const curStr=JSON.stringify(cur);
+    if(curStr===ST._cacheCur)return;
+    ST._cacheCur=curStr;
+  }
+  ST.current=cur;
+  ST._lastActive=cur._stale?ST._lastActive:cur;
   const tbody=document.getElementById('task-body');
   const thead=document.getElementById('task-header');
   tbody.innerHTML=_skelTask();
@@ -292,9 +300,11 @@ async function loadCurrent(){
   const comp=ST.current.completed||0; const pct=n?Math.round(comp/n*100):0;
   const ip=td.find(t=>t.status==='in_progress');
   const slug=ST.current.slug||'';
+  const taskTitle=ST.current.title||(td[0]?td[0].content:'');
   thead.textContent='当前任务 · '+slug;
+  if(ST.current._stale) thead.textContent+=' (已归档)';
   let h='<div class="task-hero">';
-  h+='<div class="task-hero-title">'+(td[0]?esc(td[0].content.slice(0,60)):'')+'</div>';
+  h+='<div class="task-hero-title">'+esc(taskTitle.slice(0,60))+'</div>';
   h+='<div class="task-hero-meta">'+(n)+' 项任务</div>';
   h+='<div class="task-hero-tags">';
   (ST.current.tags||[]).forEach(t=>{h+='<span class="task-hero-tag">'+esc(t)+'</span>'});
