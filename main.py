@@ -4,6 +4,7 @@ from datetime import datetime
 
 from astrbot.api import FunctionTool as _FT, logger, star
 from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.core.star.register import register_on_llm_request
 
 _VS = {"pending", "in_progress", "completed", "cancelled"}
 
@@ -703,3 +704,16 @@ class Main(star.Star):
     @filter.on_agent_done()
     async def _on_done(self, event: AstrMessageEvent, run_context, resp):
         _log_activity("Miria", "待命中", "—")
+
+    @register_on_llm_request()
+    async def _on_llm_req(self, event, request) -> None:
+        if _get_mode() != "plan":
+            return
+        ban = (
+            "\n\n【系统通知】当前为规划模式（plan），已禁止一切写操作。\n"
+            "以下工具已被锁定：safe_edit、file_patch、file_remove、git_commit、git_push、\n"
+            "file_write、http_download、file_zip 及任何修改文件系统或 Git 的操作。\n"
+            "你只能进行读取、分析、规划和检索。如确认需要施工，请提示用户在 WebUI 中切换到 build 模式。"
+        )
+        sp = request.system_prompt or ""
+        request.system_prompt = sp + ban
