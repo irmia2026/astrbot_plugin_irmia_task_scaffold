@@ -43,10 +43,33 @@ def _get_mode():
     return "build"
 
 
-_WRITABLE_TOOLS = [
+_WRITABLE_EXPLICIT = [
+    "astrbot_execute_shell",
     "safe_edit", "safe_rollback", "file_patch", "file_write", "file_remove",
     "git_commit", "git_push", "file_zip", "file_unzip", "http_download",
 ]
+_WRITE_PATTERNS = ["edit", "patch", "write", "remove", "delete", "commit", "push",
+                   "rollback", "download", "save", "create", "upload", "shell"]
+
+
+def _collect_writable(context):
+    """收集所有需停用的写工具：显式名单 + 命名模式匹配。"""
+    names = set(_WRITABLE_EXPLICIT)
+    try:
+        mgr = getattr(context, 'get_llm_tool_manager', None)
+        if mgr:
+            m = mgr()
+            if hasattr(m, '_tools'):
+                for name in m._tools:
+                    if any(p in name.lower() for p in _WRITE_PATTERNS):
+                        names.add(name)
+            elif hasattr(m, 'tools'):
+                for name in m.tools:
+                    if any(p in name.lower() for p in _WRITE_PATTERNS):
+                        names.add(name)
+    except Exception:
+        pass
+    return list(names)
 
 
 def _set_mode(mode: str, context=None):
@@ -54,18 +77,25 @@ def _set_mode(mode: str, context=None):
     with open(_mode_path(), "w", encoding="utf-8") as f:
         json.dump({"mode": mode}, f, ensure_ascii=False)
     if context:
+        targets = _collect_writable(context)
         if mode == "plan":
-            for name in _WRITABLE_TOOLS:
+            ok = []
+            for name in targets:
                 try:
-                    context.deactivate_llm_tool(name)
+                    if context.deactivate_llm_tool(name):
+                        ok.append(name)
                 except Exception:
                     pass
+            logger.info(f"plan 模式: 已停用 {len(ok)} 个写工具 — {', '.join(ok[:10])}{'...' if len(ok)>10 else ''}")
         else:
-            for name in _WRITABLE_TOOLS:
+            ok = []
+            for name in targets:
                 try:
-                    context.activate_llm_tool(name)
+                    if context.activate_llm_tool(name):
+                        ok.append(name)
                 except Exception:
                     pass
+            logger.info(f"build 模式: 已启用 {len(ok)} 个写工具")
 
 
 def _is_active():
