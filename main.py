@@ -86,20 +86,40 @@ def _is_plan_safe(tool) -> bool:
 def _get_tool_map(context):
     """返回 {name: tool_object} 映射。"""
     tools = {}
-    try:
-        mgr = getattr(context, 'get_llm_tool_manager', None)
+    if not context:
+        logger.warning("_get_tool_map: context is None")
+        return tools
+    mgr = None
+    for attr in ('get_llm_tool_manager', 'get_tool_manager', 'get_func_tool_manager', '_tool_manager'):
+        mgr = getattr(context, attr, None)
         if mgr:
-            m = mgr()
-            src = getattr(m, '_tools', None) or getattr(m, 'tools', None) or {}
-            if isinstance(src, dict):
-                tools = dict(src)
-            else:
-                for t in src:
-                    n = getattr(t, 'name', '') or str(t)
-                    if n:
-                        tools[n] = t
-    except Exception:
-        pass
+            logger.debug(f"_get_tool_map: found manager via context.{attr}")
+            break
+    if not mgr:
+        logger.warning("_get_tool_map: no tool manager found on context")
+        return tools
+    try:
+        m = mgr() if callable(mgr) else mgr
+    except Exception as e:
+        logger.warning(f"_get_tool_map: mgr() failed: {e}")
+        return tools
+    src = None
+    for attr in ('_tools', 'tools', '_func_tools', 'func_tools', '_tool_map'):
+        src = getattr(m, attr, None)
+        if src is not None:
+            logger.debug(f"_get_tool_map: found tools via .{attr}, type={type(src).__name__}")
+            break
+    if src is None:
+        logger.warning(f"_get_tool_map: no tool container found. m attrs: {[a for a in dir(m) if not a.startswith('__')][:20]}")
+        return tools
+    if isinstance(src, dict):
+        tools = dict(src)
+    else:
+        for t in src:
+            n = getattr(t, 'name', '') or str(t)
+            if n:
+                tools[n] = t
+    logger.info(f"_get_tool_map: collected {len(tools)} tools")
     return tools
 
 
