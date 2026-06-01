@@ -76,6 +76,7 @@ def _is_self_tool(tool) -> bool:
 
 
 _SELF_NAMES = set()
+_TOOL_MAP_CACHE: dict = {}
 
 
 def _is_plan_safe(tool) -> bool:
@@ -108,7 +109,9 @@ def _set_mode(mode: str, context=None):
         json.dump({"mode": mode}, f, ensure_ascii=False)
     if not context:
         return False
-    tool_map = _get_tool_map(context)
+    tool_map = _get_tool_map(context) if context else {}
+    if not tool_map:
+        tool_map = _TOOL_MAP_CACHE
     if not tool_map:
         logger.warning("_set_mode: 无法获取工具列表，工具状态未切换")
         return False
@@ -787,6 +790,8 @@ class Main(star.Star):
         else:
             tool_map = _get_tool_map(context)
             logger.info(f"启动模式: build | 已注册 {len(tool_map)} 个工具")
+        global _TOOL_MAP_CACHE
+        _TOOL_MAP_CACHE = _get_tool_map(context) or _TOOL_MAP_CACHE
         self._tray_stop = None
         try:
             from . import tray
@@ -836,9 +841,9 @@ class Main(star.Star):
             "仅在需要修改文件/提交代码时提醒用户切换到 build 模式——正常分析无需提及。"
         )
         try:
-            parts = (request.extra_user_content_parts or [])
-            if parts and "Plan 模式" in str(parts[-1]):
+            sp = request.system_prompt or ""
+            if note in sp:
                 return
-            request.extra_user_content_parts = parts + [note]
+            request.system_prompt = sp + note
         except Exception:
             pass
