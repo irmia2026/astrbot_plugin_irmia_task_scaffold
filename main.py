@@ -852,6 +852,68 @@ class Main(star.Star):
     async def _on_done(self, event: AstrMessageEvent, run_context, resp):
         _log_activity("Miria", "待命中", "—")
 
+    @filter.on_llm_tool_respond()
+    async def _on_tool_done(self, event: AstrMessageEvent, tool, tool_args, tool_result):
+        name = tool.name if hasattr(tool, "name") else str(tool)
+        if name in ("task_list", "task_archive"):
+            return
+        if not _is_active():
+            return
+        cur = _cur()
+        sp = os.path.join(cur, "00_task_state.json")
+        try:
+            with open(sp, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except Exception:
+            return
+        tds = state.get("todos", [])
+        if not tds:
+            return
+
+        cwd = ""
+        if isinstance(tool_args, dict):
+            for k in ("filepath", "path", "cwd", "file", "directory", "dir"):
+                v = tool_args.get(k, "")
+                if v and isinstance(v, str):
+                    d = os.path.dirname(v) if os.path.sep in v else v
+                    if os.path.isdir(d):
+                        cwd = d
+                        break
+        if cwd:
+            state["cwd"] = cwd
+
+        updated = False
+        for i, t in enumerate(tds):
+            if t.get("status") == "in_progress":
+                tds[i]["status"] = "completed"
+                updated = True
+                for j in range(i + 1, len(tds)):
+                    if tds[j].get("status") == "pending":
+                        tds[j]["status"] = "in_progress"
+                        break
+                break
+        if not updated:
+            for i, t in enumerate(tds):
+                if t.get("status") == "pending":
+                    tds[i]["status"] = "in_progress"
+                    updated = True
+                    break
+
+        state["todos"] = tds
+        state["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        with open(sp, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+
+        if updated:
+            now = datetime.now().isoformat(timespec="seconds")
+            with open(os.path.join(cur, "progress.log"), "a", encoding="utf-8") as f:
+                f.write(f"[{now}] auto-advance via {name}\n")
+
+        done = all(t.get("status") in ("completed", "cancelled") for t in tds)
+        if done:
+            _do_archive()
+            _log_activity("Miria", "任务完成", f"全部 {len(tds)} 项任务完成，已自动归档", tool=name)
+
     @register_on_llm_request()
     async def _on_llm_req(self, event, request) -> None:
         if _get_mode() != "plan":
