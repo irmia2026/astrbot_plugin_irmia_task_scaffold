@@ -75,20 +75,26 @@ class TaskArchiveTool(_FT):
 ### Plan/Build 模式
 
 ```
-WebUI toggle → POST /api/mode → _set_mode() → mode.json
+WebUI toggle → POST /api/mode → _set_mode() + _switch_to_plan/build()
                                               ↓
-下次 LLM 请求 → register_on_llm_request()
-              → 遍历 request.functions
-              → 命中 _WRITE_KEYWORDS 或 _ALWAYS_WRITE → 摘除
-              → 跳过 _EXEMPT_TOOLS
-              → user_prompt 注入提示
+                              ctx.deactivate_llm_tool(name) / activate_llm_tool(name)
+                                              ↓
+                              FunctionTool.active = False/True（内核级）
+                                              ↓
+下次 LLM 请求 → ToolSet 构建时自动跳过 active=False 的工具
+              → _on_decorating_result 注入提示（告知用户当前模式）
 ```
 
-工具识别：`_WRITE_KEYWORDS` = 语义关键词（write/edit/delete/execute...），匹配 `tool.description`，不硬编码工具名。
+**核心机制**：使用 AstrBot 内核 API `context.deactivate_llm_tool(name)` / `context.activate_llm_tool(name)`，
+直接设置 `FunctionTool.active` 标志。LLM 工具 schema 构建时（`get_func_desc_*_style()`）自动过滤 `active=False` 的工具，
+LLM 不可见也不可调用，彻底杜绝漏网。
 
-强制封堵：`_ALWAYS_WRITE = {"astrbot_execute_shell", "astrbot_execute_python"}` — 描述漏了也永禁。
+**模式同步**：`_reconcile_mode(ctx)` 在每次 LLM 请求前检查 mode.json 是否与已应用模式一致。
+若不一致（如系统托盘切换了 mode.json），自动同步工具激活状态。
 
-本插件豁免：`_EXEMPT_TOOLS = {"task_list", "task_archive"}` — 自身工具在 plan 模式仍可用。
+**禁用清单**（`_PLAN_DISABLED_TOOLS`）：
+- devkit: `safe_edit`, `file_patch`, `file_write`, `file_remove`, `git_commit`, `git_push`, `safe_rollback`, `file_zip`, `file_unzip`
+- AstrBot builtin: `future_task`
 
 ### HTTP 路由
 
@@ -113,7 +119,7 @@ AstrBot 自动添加 `/api/plug/` 前缀。
 | `@filter.on_llm_response()` | 活动日志（记录 LLM 回复） |
 | `@filter.on_agent_done()` | 活动日志（记录待命状态） |
 | `@filter.on_llm_tool_respond()` | **自动进度**：完成当前 todo + 提取 CWD + 自动归档 |
-| `@register_on_llm_request()` | **Plan 模式**：过滤写工具 + 注入提示 |
+| `@register_on_llm_request()` | **模式同步**：每次请求前调用 `_reconcile_mode` 确保工具激活状态与 mode.json 一致 |
 
 ### WebUI (dashboard.html)
 

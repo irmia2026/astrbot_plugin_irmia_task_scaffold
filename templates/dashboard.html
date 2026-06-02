@@ -18,6 +18,26 @@
   --font: 'Outfit','Noto Sans SC',sans-serif;
   --spring: cubic-bezier(.34,1.56,.64,1); --ease: cubic-bezier(.4,0,.2,1);
 }
+[data-theme="dark"]{
+  --bg:#0f172a;--surface:#1e293b;--border:#334155;
+  --text:#e2e8f0;--text2:#94a3b8;--muted:#64748b;
+  --blue:#60a5fa;--blue-light:#1e3a5f;--emerald:#34d399;--emerald-light:#064e3b;
+  --amber:#fbbf24;--amber-light:#451a03;--rose:#fb7185;--rose-light:#4c0519;
+  --violet:#a78bfa;--violet-light:#2e1065;
+}
+[data-theme="dark"] body::before{background:radial-gradient(ellipse at 0% 30%,rgba(96,165,250,.06)0%,transparent 55%),radial-gradient(ellipse at 100% 70%,rgba(167,139,250,.04)0%,transparent 55%)}
+[data-theme="dark"] body::after{background-image:radial-gradient(circle,rgba(96,165,250,.03)1px,transparent 1px)}
+[data-theme="dark"] .todo-item:hover{background:#1e293b}
+[data-theme="dark"] .todo-num.cancelled,
+[data-theme="dark"] .todo-num.waiting{background:#334155;color:var(--muted)}
+[data-theme="dark"] .todo-pill.low{background:#334155;color:var(--muted)}
+[data-theme="dark"] .live-row{border-bottom-color:rgba(51,65,85,.5)}
+[data-theme="dark"] .arc-group-head:hover{background:#1e293b}
+[data-theme="dark"] .skeleton{background:linear-gradient(90deg,var(--border)25%,#334155 50%,var(--border)75%);background-size:200% 100%}
+[data-theme="dark"] .file-preview-body{color:#94a3b8}
+[data-theme="dark"] .mode-slider{box-shadow:0 1px 2px rgba(0,0,0,.3)}
+[data-theme="dark"] .archive-search{color:var(--text)}
+[data-theme="dark"] ::-webkit-scrollbar-thumb{background:#475569}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
@@ -39,6 +59,10 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .nav-status{display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:11px;color:var(--text2)}
 .nav-status .sdot{width:7px;height:7px;border-radius:50%;background:var(--emerald);box-shadow:0 0 0 3px var(--emerald-light);animation:dotLive 2s infinite}
 @keyframes dotLive{0%,100%{opacity:1}50%{opacity:.4}}
+.theme-toggle{width:18px;height:18px;margin-left:auto;border-radius:50%;cursor:pointer;transition:background .3s,box-shadow .3s;background:var(--amber);box-shadow:0 0 0 2px var(--amber-light);position:relative}
+[data-theme="dark"] .theme-toggle{background:var(--blue);box-shadow:0 0 0 2px var(--blue-light)}
+.theme-toggle:hover{box-shadow:0 0 0 4px var(--amber-light)}
+[data-theme="dark"] .theme-toggle:hover{box-shadow:0 0 0 4px var(--blue-light)}
 
 .mode-pill{display:inline-flex;position:relative;background:var(--border);border-radius:20px;padding:2px;cursor:pointer;box-shadow:var(--shadow);transition:box-shadow .2s;user-select:none}
 .mode-pill:hover{box-shadow:var(--shadow-hover)}
@@ -202,7 +226,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     </div>
   </div>
   <div class="nav-panel" style="flex-shrink:0">
-    <div class="nav-status"><span class="sdot"></span> AstrBot 在线 <span id="nav-time"></span></div>
+    <div class="nav-status"><span class="sdot"></span> AstrBot 在线 <span id="nav-time"></span><span class="theme-toggle" onclick="toggleTheme()" title="切换深色/浅色模式"></span></div>
   </div>
 </div>
 
@@ -252,6 +276,17 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 <script>
 var API='/api/plug/task_scaffold/api';
+(function(){
+  let t=localStorage.getItem('task_scaffold_theme')||'light';
+  if(t==='dark')document.documentElement.setAttribute('data-theme','dark');
+  window._theme=t;
+})();
+function toggleTheme(){
+  let t=window._theme==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',t);
+  localStorage.setItem('task_scaffold_theme',t);
+  window._theme=t;
+}
 let ST={current:null,archives:[],activeCat:'all',files:{},_cacheAct:'',_cacheCur:'',_lastActive:null},_rendered=new Set();
 
 async function get(path){

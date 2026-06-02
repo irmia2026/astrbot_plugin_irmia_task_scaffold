@@ -9,6 +9,14 @@ from astrbot.core.star.register import register_on_llm_request
 
 _VS = {"pending", "in_progress", "completed", "cancelled"}
 
+_PLAN_DISABLED_TOOLS = (
+    "safe_edit", "file_patch", "file_write", "file_remove",
+    "git_commit", "git_push", "safe_rollback",
+    "file_zip", "file_unzip",
+    "future_task",
+    "astrbot_execute_shell", "astrbot_execute_python",
+)
+
 _RT = "# 调研\n\n*（在此记录参考来源、竞品分析、技术决策依据）*\n\n## 参考来源\n- \n\n## 技术对比\n- \n\n## 决策记录\n- \n"
 _DT = "# 设计\n\n*（在此记录架构决策、接口定义、数据流图）*\n\n## 架构决策\n- \n\n## 接口定义\n- \n\n## 数据流\n- \n"
 
@@ -34,33 +42,57 @@ def _mode_path():
     return os.path.join(_root(), "state", "mode.json")
 
 
+_MODE_CACHE = ("build", 0.0)
+
 def _get_mode():
+    global _MODE_CACHE
     mp = _mode_path()
     try:
+        mtime = os.path.getmtime(mp)
+        if mtime == _MODE_CACHE[1]:
+            return _MODE_CACHE[0]
         if os.path.isfile(mp):
             with open(mp, "r", encoding="utf-8") as f:
-                return json.load(f).get("mode", "build")
-    except Exception:
+                mode = json.load(f).get("mode", "build")
+            _MODE_CACHE = (mode, mtime)
+            return mode
+    except OSError:
         pass
-    return "build"
+    return _MODE_CACHE[0]
 
 
-_WRITE_KEYWORDS = [
-    "write", "edit", "patch", "save", "modify", "create",
-    "delete", "remove", "execute", "run", "send",
-    "download", "commit", "push", "deploy", "start",
-    "stop", "restart", "schedule", "upload", "publish",
-    "release", "merge", "install", "uninstall",
-    "rollback", "unzip",
-]
-_ALWAYS_WRITE = {"astrbot_execute_shell", "astrbot_execute_python"}
-_EXEMPT_TOOLS = {"task_list", "task_archive"}
+_LAST_APPLIED_MODE = None
+
+
+def _switch_to_plan(ctx):
+    for name in _PLAN_DISABLED_TOOLS:
+        try:
+            ctx.deactivate_llm_tool(name)
+        except Exception as e:
+            logger.debug(f"停用 {name} 失败: {e}")
+    logger.info(f"plan 模式：已停用 {len(_PLAN_DISABLED_TOOLS)} 个写工具")
+
+
+def _switch_to_build(ctx):
+    for name in _PLAN_DISABLED_TOOLS:
+        try:
+            ctx.activate_llm_tool(name)
+        except Exception as e:
+            logger.debug(f"激活 {name} 失败: {e}")
+    logger.info(f"build 模式：已激活 {len(_PLAN_DISABLED_TOOLS)} 个写工具")
 
 
 def _set_mode(mode: str, context=None):
     os.makedirs(os.path.dirname(_mode_path()), exist_ok=True)
     with open(_mode_path(), "w", encoding="utf-8") as f:
         json.dump({"mode": mode}, f, ensure_ascii=False)
+    if context is not None:
+        if mode == "plan":
+            _switch_to_plan(context)
+        else:
+            _switch_to_build(context)
+        global _LAST_APPLIED_MODE
+        _LAST_APPLIED_MODE = mode
     logger.info(f"模式切换 → {mode}")
     return True
 
@@ -164,7 +196,7 @@ def _init_ws(todos, slug, tags=None, title="", cwd=""):
     cur = _cur()
     os.makedirs(cur, exist_ok=True)
     now = datetime.now().isoformat(timespec="seconds")
-    st = {"slug": slug, "updated_at": now, "todos": todos, "tags": tags or [], "title": title or todos[0]["content"][:60] if todos else "", "cwd": cwd}
+    st = {"slug": slug, "updated_at": now, "todos": todos, "tags": tags or [], "title": title or (todos[0]["content"][:60] if todos else ""), "cwd": cwd}
     with open(os.path.join(cur, "00_task_state.json"), "w", encoding="utf-8") as f:
         json.dump(st, f, ensure_ascii=False, indent=2)
     with open(os.path.join(cur, "01_research.md"), "w", encoding="utf-8") as f:
@@ -226,9 +258,9 @@ def _gen_report(todos, slug):
                     secs = int((t2 - t1).total_seconds())
                     dur = f"{secs//60}min" if secs < 3600 else f"{secs//3600}h{(secs%3600)//60}min"
                 except Exception:
-                    pass
+                    logger.debug(f"计算耗时失败: {ts_list[:2]}")
         except Exception:
-            pass
+            logger.debug("读取 progress.log 失败，跳过耗时计算")
     lines.append("─" * 40)
     lines.append(f"总计: {comp}/{total} 完成" + (f" | 耗时: ~{dur}" if dur else ""))
     lines.append(f"工作空间已归档至: archive/{slug}/")
@@ -239,6 +271,8 @@ def _do_archive():
     cur = _cur()
     sp = os.path.join(cur, "00_task_state.json")
     if not os.path.exists(sp):
+        return None
+    if not os.path.isdir(cur):
         return None
     with open(sp, "r", encoding="utf-8") as f:
         state = json.load(f)
@@ -252,6 +286,9 @@ def _do_archive():
     now = datetime.now().isoformat(timespec="seconds")
     with open(os.path.join(cur, "progress.log"), "a", encoding="utf-8") as f:
         f.write(f"[{now}] TASK mode ended\n")
+    if not os.path.isdir(cur):
+        logger.warning(f"归档时 current/ 目录已不存在，可能被并发归档移除")
+        return state
     shutil.move(cur, d)
     with open(os.path.join(d, "progress.log"), "a", encoding="utf-8") as f:
         f.write(f"[{now}] workspace archived — {len(state.get('todos', []))} tasks\n")
@@ -275,23 +312,9 @@ def _err(msg):
 
 
 _TASK_LIST_DESC = (
-    "你的方法论文本工作空间。使用 action 参数控制模式。\n\n"
-    "【自动触发】\n"
-    "遇到 3+ 步 / 多文件 / 预计超 5 轮对话的任务时，\n"
-    "立即自动调用 task_list(action='start', todos=[...])。\n"
-    "触发后回复用户一句「已进入长任务模式」。\n\n"
-    "【TASK 模式中】\n"
-    "- 每完成一步：task_list(action='update', todos=[...])\n"
-    "- 不确定进度：task_list(action='status')\n"
-    "- 被打断后恢复：task_list(action='status') 先看进度\n\n"
-    "【退出】\n"
-    "全部完成后：task_list(action='complete')\n"
-    "→ 生成汇报发给用户 → 回到 IDLE\n\n"
-    "【日常聊天无需调用】——IDLE 模式下不参与对话。\n\n"
-    "【上下文丢失恢复】\n"
-    "如果你的历史消息中看不到最近的 task_list 调用结果，\n"
-    "或你不确定当前任务进度，立即调用 task_list(action='status')。\n"
-    "状态查询零副作用——它只读取磁盘，不修改任何东西。"
+    "长任务进度追踪。遇 3+步/多文件/预计超5轮对话的复杂任务时调用。"
+    "日常闲聊切勿调用。状态查询零副作用（只读磁盘，不修改任何内容）。"
+    "action: start(创建多步骤任务)/update(更新进度)/complete(核实全部完成后生成汇报)/status(纯读取进度)"
 )
 
 _TASK_LIST_PARAMS = {
@@ -300,49 +323,41 @@ _TASK_LIST_PARAMS = {
         "action": {
             "type": "string",
             "enum": ["start", "update", "complete", "status"],
-            "description": "操作模式：start(创建)/update(更新)/complete(完成汇报)/status(纯读取)",
+            "description": "操作模式",
         },
         "todos": {
             "type": "array",
-            "description": "任务列表（start/update 时必填）。全量覆写。格式: [{'content':..., 'status':..., 'priority':...}]",
+            "description": "任务列表，全量覆写。start/update时必填",
             "items": {
                 "type": "object",
                 "properties": {
                     "content": {"type": "string", "description": "任务描述"},
-                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"], "description": "任务状态"},
-                    "priority": {"type": "string", "enum": ["high", "medium", "low"], "description": "优先级（可选）"},
+                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"]},
+                    "priority": {"type": "string", "enum": ["high", "medium", "low"], "description": "优先级，可选"},
                 },
                 "required": ["content", "status"],
             },
         },
-        "workspace_slug": {"type": "string", "description": "可选。start 时指定工作空间目录名，如 '2026-05-31_REV-008'"},
-        "title": {"type": "string", "description": "可选。任务标题"},
-        "cwd": {"type": "string", "description": "可选。当前工作目录路径，如 'D:/project'"},
-        "tags": {"type": "array", "items": {"type": "string"}, "description": "可选。标签列表，仅 start 时生效。如 ['devkit','debug']"},
+        "workspace_slug": {"type": "string", "description": "工作空间目录名，可选"},
+        "title": {"type": "string", "description": "任务标题，可选"},
+        "cwd": {"type": "string", "description": "当前工作目录，可选"},
+        "tags": {"type": "array", "items": {"type": "string"}, "description": "标签，start时可选"},
     },
     "required": ["action"],
 }
 
 _TASK_ARCHIVE_DESC = (
-    "你的归档记忆系统。当对话涉及过往任务细节、且上下文可能已缺失时，主动调用召回。\n\n"
-    "【主动召回场景】\n"
-    "- 用户说「上次那个 TASK-XXX 怎么样了」→ read 读取归档\n"
-    "- 用户说「之前修的那个 bug 又出现了」→ search 搜索关键词\n"
-    "- 讨论引用了已归档任务的细节但上下文丢失 → search/read 找回\n"
-    "- 用户询问过去做过什么 → list 列出归档概览\n\n"
-    "action:\n"
-    "- list: 列出最近归档\n"
-    "- read: 读取指定归档的文件（slug + file 必填）\n"
-    "- search: 全文搜索关键词（在归档目录内搜索）"
+    "已归档长任务查询。当需要召回历史任务细节、搜索过往决策或查看过往任务列表时调用。"
+    "action: list(列出最近归档)/read(读取指定归档文件，slug和file必填)/search(全文搜索关键词)"
 )
 
 _TASK_ARCHIVE_PARAMS = {
     "type": "object",
     "properties": {
-        "action": {"type": "string", "enum": ["list", "read", "search"], "description": "list/read/search"},
-        "slug": {"type": "string", "description": "归档 slug（read 时必填）"},
-        "file": {"type": "string", "description": "文件名（read 时必填）"},
-        "keyword": {"type": "string", "description": "搜索关键词（search 时必填）"},
+        "action": {"type": "string", "enum": ["list", "read", "search"]},
+        "slug": {"type": "string", "description": "归档标识，read时必填"},
+        "file": {"type": "string", "description": "文件名，read时必填"},
+        "keyword": {"type": "string", "description": "搜索词，search时必填"},
     },
     "required": ["action"],
 }
@@ -406,21 +421,7 @@ class TaskListTool(_FT):
 
             if action == "complete":
                 if not active:
-                    arc_dir = _arc()
-                    if os.path.isdir(arc_dir):
-                        dirs = sorted([d for d in os.listdir(arc_dir) if os.path.isdir(os.path.join(arc_dir, d))], reverse=True)
-                        if dirs:
-                            sp = os.path.join(arc_dir, dirs[0], "00_task_state.json")
-                            if os.path.isfile(sp):
-                                with open(sp, "r", encoding="utf-8") as f:
-                                    st = json.load(f)
-                                tds = st.get("todos", [])
-                                slug = st.get("slug", dirs[0])
-                                report = _gen_report(tds, slug)
-                                return json.dumps({"ok": True, "report": report,
-                                                   "archive_path": f"task_scaffolds/archive/{slug}/",
-                                                   "summary": f"已归档: {slug}", "action": "completed"}, ensure_ascii=False)
-                    return _err("未进入长任务模式且无归档记录")
+                    return _err("未进入长任务模式，无需 complete。查看历史归档请用 task_archive(action='list')")
                 sp = os.path.join(_cur(), "00_task_state.json")
                 with open(sp, "r", encoding="utf-8") as f:
                     st = json.load(f)
@@ -448,6 +449,7 @@ class TaskArchiveTool(_FT):
             arc = _arc()
             if action == "list":
                 items = []
+                dirs = []
                 if os.path.isdir(arc):
                     dirs = sorted([d for d in os.listdir(arc) if os.path.isdir(os.path.join(arc, d))], reverse=True)
                     for d in dirs[:50]:
@@ -515,7 +517,10 @@ class TaskArchiveTool(_FT):
 _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
+_ACTIVITY_WRITE_COUNT = 0
+
 def _log_activity(agent: str, status: str, detail: str, tool: str = None, task_summary: str = None):
+    global _ACTIVITY_WRITE_COUNT
     state_dir = os.path.join(_root(), "state")
     os.makedirs(state_dir, exist_ok=True)
     entry = {"ts": datetime.now().strftime("%H:%M:%S"), "agent": agent, "status": status,
@@ -523,7 +528,9 @@ def _log_activity(agent: str, status: str, detail: str, tool: str = None, task_s
     fp = os.path.join(state_dir, "activity.jsonl")
     with open(fp, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    _trim_line_file(fp, 200)
+    _ACTIVITY_WRITE_COUNT += 1
+    if _ACTIVITY_WRITE_COUNT % 50 == 0:
+        _trim_line_file(fp, 200)
 
 
 def _trim_line_file(fp: str, max_lines: int):
@@ -535,8 +542,10 @@ def _trim_line_file(fp: str, max_lines: int):
     except Exception:
         lines = []
     if len(lines) > max_lines:
-        with open(fp, "w", encoding="utf-8") as f:
+        tmp = fp + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             f.writelines(lines[-max_lines:])
+        os.replace(tmp, fp)
 
 
 def _load_dashboard():
@@ -617,8 +626,9 @@ def _register_routes(context):
         return jsonify(items[:50])
 
     async def api_archive_summary(slug):
-        fp = os.path.join(_arc(), slug, "00_task_state.json")
-        if not os.path.isfile(fp):
+        a = _arc()
+        fp = os.path.join(a, slug, "00_task_state.json")
+        if not os.path.isfile(fp) or not fp.startswith(os.path.abspath(a)):
             return jsonify({"ok": False, "error": "not found"})
         with open(fp, "r", encoding="utf-8") as f:
             st = json.load(f)
@@ -664,7 +674,7 @@ def _register_routes(context):
             m = ""
         if m not in ("plan", "build"):
             return jsonify({"ok": False, "error": "mode 必须是 plan 或 build"})
-        _set_mode(m)
+        _set_mode(m, context)
         _log_activity("System", "系统", f"模式切换 → {m}")
         return jsonify({"ok": True, "mode": m})
 
@@ -690,8 +700,8 @@ def _register_routes(context):
                 if "<" not in path:
                     app.add_url_rule(path, path.replace("/", "_"), handler, methods=methods)
             logger.info(f"已通过 Quart app 注册 {len(_ROUTES)} 条路由")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Quart app 路由注册跳过: {e}")
 
     logger.info(f"WebUI 路由已注册: {' | '.join(p for p,_,_,_ in _ROUTES)}")
 
@@ -699,12 +709,13 @@ def _register_routes(context):
 class Main(star.Star):
     def __init__(self, context, config=None):
         super().__init__(context)
+        self.ctx = context
         tl = TaskListTool()
         ta = TaskArchiveTool()
         context.add_llm_tools(tl, ta)
         _register_routes(context)
         if _get_mode() == "plan":
-            _set_mode("build")
+            _set_mode("build", context)
             logger.info("启动时检测到 plan 模式残留，已强制重置为 build")
         self._tray_stop = None
         try:
@@ -745,17 +756,15 @@ class Main(star.Star):
         name = tool.name if hasattr(tool, "name") else str(tool)
         if name in ("task_list", "task_archive"):
             return
-        if not _is_active():
-            return
         cur = _cur()
         sp = os.path.join(cur, "00_task_state.json")
         try:
             with open(sp, "r", encoding="utf-8") as f:
                 state = json.load(f)
+            tds = state.get("todos", [])
+            if not tds:
+                return
         except Exception:
-            return
-        tds = state.get("todos", [])
-        if not tds:
             return
 
         cwd = ""
@@ -804,34 +813,22 @@ class Main(star.Star):
 
     @register_on_llm_request()
     async def _on_llm_req(self, event, request) -> None:
-        if _get_mode() != "plan":
-            return
-        funcs = getattr(request, 'functions', None) or getattr(request, 'tools', None) or getattr(request, 'func_tool', None)
-        removed = []
-        if funcs:
-            keep = []
-            for f in funcs:
-                name = getattr(f, 'name', '') or (f.get('name', '') if isinstance(f, dict) else '')
-                if name in _EXEMPT_TOOLS:
-                    keep.append(f)
-                    continue
-                desc = getattr(f, 'description', '') or (f.get('description', '') if isinstance(f, dict) else '')
-                if name in _ALWAYS_WRITE or any(kw in (desc.lower() if desc else '') for kw in _WRITE_KEYWORDS):
-                    removed.append(name)
-                else:
-                    keep.append(f)
-            if removed:
-                if hasattr(request, 'functions'):
-                    request.functions = keep
-                if hasattr(request, 'tools'):
-                    request.tools = keep
-                if hasattr(request, 'func_tool') and hasattr(request.func_tool, 'remove_tool'):
-                    for name in removed:
-                        try:
-                            request.func_tool.remove_tool(name)
-                        except Exception:
-                            pass
-                logger.info(f"plan 模式屏蔽 {len(removed)} 个写工具: {removed[:8]}{'...' if len(removed)>8 else ''}")
+        mode = _get_mode()
+        global _LAST_APPLIED_MODE
+        if mode != _LAST_APPLIED_MODE:
+            if mode == "plan":
+                _switch_to_plan(self.ctx)
+            else:
+                _switch_to_build(self.ctx)
+            _LAST_APPLIED_MODE = mode
+        if mode == "plan":
+            ft = getattr(request, 'func_tool', None)
+            if ft and hasattr(ft, 'remove_tool'):
+                for name in _PLAN_DISABLED_TOOLS:
+                    try:
+                        ft.remove_tool(name)
+                    except Exception:
+                        pass
 
     @filter.on_decorating_result()
     async def _on_decorating_result(self, event):
@@ -841,5 +838,5 @@ class Main(star.Star):
         try:
             result = event.get_result()
             event.set_result(result + note)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"注入 plan 提示失败: {e}")
