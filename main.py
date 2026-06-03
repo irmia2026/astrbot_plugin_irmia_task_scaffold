@@ -9,13 +9,19 @@ from astrbot.core.star.register import register_on_llm_request
 
 _VS = {"pending", "in_progress", "completed", "cancelled"}
 
-_PLAN_DISABLED_TOOLS = (
-    "safe_edit", "file_patch", "file_write", "file_remove",
-    "git_commit", "git_push", "safe_rollback",
-    "file_zip", "file_unzip",
-    "future_task",
-    "astrbot_execute_shell", "astrbot_execute_python",
-)
+_WRITE_KEYWORDS = [
+    "write", "edit", "patch", "save", "modify", "create",
+    "delete", "remove", "execute", "run", "send",
+    "commit", "push", "deploy", "start",
+    "stop", "restart", "schedule", "upload", "publish",
+    "release", "merge", "install", "uninstall",
+    "rollback", "unzip",
+    "部署", "安装", "删除", "写入", "创建", "修改", "编辑",
+    "执行", "运行", "下载", "上传", "提交", "推送", "发布",
+    "合并", "卸载", "回滚", "解压", "压缩", "重启",
+]
+_ALWAYS_WRITE = {"astrbot_execute_shell", "astrbot_execute_python"}
+_EXEMPT_TOOLS = {"task_list", "task_archive"}
 
 _RT = "# 调研\n\n*（在此记录参考来源、竞品分析、技术决策依据）*\n\n## 参考来源\n- \n\n## 技术对比\n- \n\n## 决策记录\n- \n"
 _DT = "# 设计\n\n*（在此记录架构决策、接口定义、数据流图）*\n\n## 架构决策\n- \n\n## 接口定义\n- \n\n## 数据流\n- \n"
@@ -42,57 +48,21 @@ def _mode_path():
     return os.path.join(_root(), "state", "mode.json")
 
 
-_MODE_CACHE = ("build", 0.0)
-
 def _get_mode():
-    global _MODE_CACHE
     mp = _mode_path()
     try:
-        mtime = os.path.getmtime(mp)
-        if mtime == _MODE_CACHE[1]:
-            return _MODE_CACHE[0]
         if os.path.isfile(mp):
             with open(mp, "r", encoding="utf-8") as f:
-                mode = json.load(f).get("mode", "build")
-            _MODE_CACHE = (mode, mtime)
-            return mode
-    except OSError:
+                return json.load(f).get("mode", "build")
+    except Exception:
         pass
-    return _MODE_CACHE[0]
+    return "build"
 
 
-_LAST_APPLIED_MODE = None
-
-
-def _switch_to_plan(ctx):
-    for name in _PLAN_DISABLED_TOOLS:
-        try:
-            ctx.deactivate_llm_tool(name)
-        except Exception as e:
-            logger.debug(f"停用 {name} 失败: {e}")
-    logger.info(f"plan 模式：已停用 {len(_PLAN_DISABLED_TOOLS)} 个写工具")
-
-
-def _switch_to_build(ctx):
-    for name in _PLAN_DISABLED_TOOLS:
-        try:
-            ctx.activate_llm_tool(name)
-        except Exception as e:
-            logger.debug(f"激活 {name} 失败: {e}")
-    logger.info(f"build 模式：已激活 {len(_PLAN_DISABLED_TOOLS)} 个写工具")
-
-
-def _set_mode(mode: str, context=None):
+def _set_mode(mode: str):
     os.makedirs(os.path.dirname(_mode_path()), exist_ok=True)
     with open(_mode_path(), "w", encoding="utf-8") as f:
         json.dump({"mode": mode}, f, ensure_ascii=False)
-    if context is not None:
-        if mode == "plan":
-            _switch_to_plan(context)
-        else:
-            _switch_to_build(context)
-        global _LAST_APPLIED_MODE
-        _LAST_APPLIED_MODE = mode
     logger.info(f"模式切换 → {mode}")
     return True
 
@@ -292,7 +262,46 @@ def _do_archive():
     shutil.move(cur, d)
     with open(os.path.join(d, "progress.log"), "a", encoding="utf-8") as f:
         f.write(f"[{now}] workspace archived — {len(state.get('todos', []))} tasks\n")
+    _record_summary(state)
     return state
+
+
+def _record_summary(state):
+    tds = state.get("todos", [])
+    if not tds:
+        return
+    done = sum(1 for t in tds if t.get("status") == "completed")
+    cn = sum(1 for t in tds if t.get("status") == "cancelled")
+    first = tds[0].get("content", "")[:40] if tds else ""
+    now = datetime.now().isoformat(timespec="seconds")
+    title = state.get("title", first) or first
+    line = json.dumps({"ts": now, "slug": state.get("slug", ""), "total": len(tds),
+                       "done": done, "cancelled": cn, "title": title[:60]}, ensure_ascii=False)
+    sd = os.path.join(_root(), "state")
+    os.makedirs(sd, exist_ok=True)
+    fp = os.path.join(sd, "summary.jsonl")
+    with open(fp, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+    _trim_line_file(fp, 100)
+
+
+def _get_recent_summaries(n=5):
+    fp = os.path.join(_root(), "state", "summary.jsonl")
+    if not os.path.isfile(fp):
+        return []
+    lines = []
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        lines.append(json.loads(line))
+                    except Exception:
+                        pass
+    except Exception:
+        return []
+    return lines[-n:]
 
 
 def _cnt(todos):
@@ -314,7 +323,7 @@ def _err(msg):
 _TASK_LIST_DESC = (
     "长任务进度追踪。遇 3+步/多文件/预计超5轮对话的复杂任务时调用。"
     "日常闲聊切勿调用。状态查询零副作用（只读磁盘，不修改任何内容）。"
-    "action: start(创建多步骤任务)/update(更新进度)/complete(核实全部完成后生成汇报)/status(纯读取进度)"
+    "action: start/create/update/complete/status/load_template/list_templates/checkpoint/rollback/list_checkpoints"
 )
 
 _TASK_LIST_PARAMS = {
@@ -322,7 +331,7 @@ _TASK_LIST_PARAMS = {
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["start", "update", "complete", "status"],
+            "enum": ["start", "update", "complete", "status", "load_template", "list_templates", "checkpoint", "rollback", "list_checkpoints"],
             "description": "操作模式",
         },
         "todos": {
@@ -342,6 +351,8 @@ _TASK_LIST_PARAMS = {
         "title": {"type": "string", "description": "任务标题，可选"},
         "cwd": {"type": "string", "description": "当前工作目录，可选"},
         "tags": {"type": "array", "items": {"type": "string"}, "description": "标签，start时可选"},
+        "template": {"type": "string", "description": "模板名，load_template时必填"},
+        "checkpoint_name": {"type": "string", "description": "检查点名，checkpoint/rollback时必填"},
     },
     "required": ["action"],
 }
@@ -370,7 +381,7 @@ class TaskListTool(_FT):
     description: str = _TASK_LIST_DESC
     parameters: dict = field(default_factory=lambda: _TASK_LIST_PARAMS)
 
-    async def call(self, context, action: str, todos: list = None, workspace_slug: str = "", tags: list = None, title: str = "", cwd: str = "") -> str:
+    async def call(self, context, action: str, todos: list = None, workspace_slug: str = "", tags: list = None, title: str = "", cwd: str = "", template: str = "", checkpoint_name: str = "") -> str:
         try:
             active = _is_active()
             mode = _get_mode()
@@ -378,7 +389,12 @@ class TaskListTool(_FT):
                 return _err("当前为 Plan 模式，写操作已锁定。请在 WebUI 中将 Plan 切换为 Build 后重试。")
             if action == "status":
                 if not active:
-                    return json.dumps({"ok": True, "status": "idle", "summary": "IDLE — 未进入长任务模式"}, ensure_ascii=False)
+                    rec = _get_recent_summaries(5)
+                    rpt = {"ok": True, "status": "idle", "summary": "IDLE — 未进入长任务模式"}
+                    if rec:
+                        rpt["recent"] = rec
+                        rpt["summary"] += f" （最近完成 {len(rec)} 项归档）"
+                    return json.dumps(rpt, ensure_ascii=False)
                 sp = os.path.join(_cur(), "00_task_state.json")
                 with open(sp, "r", encoding="utf-8") as f:
                     st = json.load(f)
@@ -431,6 +447,17 @@ class TaskListTool(_FT):
                 _do_archive()
                 return json.dumps({"ok": True, "report": report, "archive_path": f"task_scaffolds/archive/{slug}/",
                                    "summary": f"已归档: {slug}", "action": "completed"}, ensure_ascii=False)
+
+            if action == "load_template":
+                return _load_template(template)
+            if action == "list_templates":
+                return _list_templates()
+            if action == "checkpoint":
+                return _do_checkpoint(checkpoint_name)
+            if action == "rollback":
+                return _do_rollback(checkpoint_name)
+            if action == "list_checkpoints":
+                return _list_checkpoints()
 
             return _err(f"未知 action: {action}")
         except Exception as e:
@@ -510,6 +537,175 @@ class TaskArchiveTool(_FT):
             return _err(str(e))
 
 
+_TEMPLATE_DIR = None
+
+def _tmpl_dir():
+    global _TEMPLATE_DIR
+    if _TEMPLATE_DIR is None:
+        _TEMPLATE_DIR = os.path.join(_root(), "templates")
+    return _TEMPLATE_DIR
+
+
+def _list_templates():
+    td = _tmpl_dir()
+    if not os.path.isdir(td):
+        return json.dumps({"ok": True, "templates": [], "hint": "无自定义模板，使用预置模板: feature_impl, bug_fix, code_review"}, ensure_ascii=False)
+    items = sorted([f for f in os.listdir(td) if f.endswith(".json")])
+    return json.dumps({"ok": True, "templates": [i.rsplit(".", 1)[0] for i in items]}, ensure_ascii=False)
+
+
+_BUILTIN_TEMPLATES = {
+    "feature_impl": {
+        "title": "功能实现",
+        "todos": [
+            {"content": "调研技术方案与参考实现", "status": "pending", "priority": "high"},
+            {"content": "设计架构与接口", "status": "pending", "priority": "high"},
+            {"content": "编写核心实现代码", "status": "pending", "priority": "high"},
+            {"content": "编写单元测试", "status": "pending", "priority": "medium"},
+            {"content": "集成测试与文档更新", "status": "pending", "priority": "medium"},
+        ]
+    },
+    "bug_fix": {
+        "title": "Bug 修复",
+        "todos": [
+            {"content": "复现 Bug 并确认根因", "status": "pending", "priority": "high"},
+            {"content": "定位问题代码", "status": "pending", "priority": "high"},
+            {"content": "实施修复", "status": "pending", "priority": "high"},
+            {"content": "回归验证", "status": "pending", "priority": "medium"},
+        ]
+    },
+    "code_review": {
+        "title": "代码审查",
+        "todos": [
+            {"content": "通读源码理解整体结构", "status": "pending", "priority": "high"},
+            {"content": "识别潜在问题与改进点", "status": "pending", "priority": "high"},
+            {"content": "编写审查报告", "status": "pending", "priority": "medium"},
+            {"content": "实施修复与优化", "status": "pending", "priority": "medium"},
+            {"content": "最终验证", "status": "pending", "priority": "medium"},
+        ]
+    },
+}
+
+
+def _load_template(name: str):
+    if not name:
+        return _err("load_template 需要 template 参数")
+    td = _tmpl_dir()
+    fp = os.path.join(td, f"{name}.json")
+    if not fp.startswith(os.path.abspath(td)):
+        return _err(f"模板名不合法: {name}")
+    if os.path.isfile(fp):
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return json.dumps({"ok": True, "template": name, "source": "custom",
+                               "title": data.get("title", ""),
+                               "todos": data.get("todos", [])}, ensure_ascii=False)
+        except Exception as e:
+            return _err(f"模板解析失败: {e}")
+    if name in _BUILTIN_TEMPLATES:
+        tmpl = _BUILTIN_TEMPLATES[name]
+        return json.dumps({"ok": True, "template": name, "source": "builtin",
+                           "title": tmpl["title"],
+                           "todos": tmpl["todos"]}, ensure_ascii=False)
+    return _err(f"模板不存在: {name}（可用: {', '.join(_BUILTIN_TEMPLATES)}）")
+
+
+def _ckpt_dir():
+    return os.path.join(_cur(), "checkpoints")
+
+
+def _do_checkpoint(name: str):
+    if not name:
+        return _err("checkpoint 需要 checkpoint_name 参数")
+    if not _is_active():
+        return _err("无活跃任务，无法创建检查点")
+    cd = _ckpt_dir()
+    os.makedirs(cd, exist_ok=True)
+    src = os.path.join(_cur(), "00_task_state.json")
+    dst = os.path.join(cd, f"{name}.json")
+    try:
+        with open(src, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        state["checkpoint_name"] = name
+        state["checkpoint_at"] = datetime.now().isoformat(timespec="seconds")
+        with open(dst, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        return json.dumps({"ok": True, "checkpoint": name, "todos_count": len(state.get("todos", []))}, ensure_ascii=False)
+    except Exception as e:
+        return _err(f"创建检查点失败: {e}")
+
+
+def _do_rollback(name: str):
+    if not name:
+        return _err("rollback 需要 checkpoint_name 参数")
+    if not _is_active():
+        return _err("无活跃任务，无法回滚")
+    cd = _ckpt_dir()
+    fp = os.path.join(cd, f"{name}.json")
+    if not os.path.isfile(fp):
+        return _err(f"检查点不存在: {name}")
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            ckpt = json.load(f)
+        ckpt.pop("checkpoint_name", None)
+        ckpt.pop("checkpoint_at", None)
+        now = datetime.now().isoformat(timespec="seconds")
+        ckpt["updated_at"] = now
+        cur = _cur()
+        with open(os.path.join(cur, "00_task_state.json"), "w", encoding="utf-8") as f:
+            json.dump(ckpt, f, ensure_ascii=False, indent=2)
+        with open(os.path.join(cur, "progress.log"), "a", encoding="utf-8") as f:
+            f.write(f"[{now}] rolled back to checkpoint: {name}\n")
+        return _ok(ckpt.get("todos", []), summary="已回滚到检查点 " + name, action="rolled_back")
+    except Exception as e:
+        return _err(f"回滚失败: {e}")
+
+
+def _list_checkpoints():
+    cd = _ckpt_dir()
+    if not os.path.isdir(cd):
+        return json.dumps({"ok": True, "checkpoints": []}, ensure_ascii=False)
+    cps = []
+    for fn in sorted(os.listdir(cd)):
+        if fn.endswith(".json"):
+            fp = os.path.join(cd, fn)
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    ckpt = json.load(f)
+                cps.append({"name": fn[:-5], "at": ckpt.get("checkpoint_at", ""),
+                            "todos": len(ckpt.get("todos", []))})
+            except Exception:
+                pass
+    return json.dumps({"ok": True, "checkpoints": cps}, ensure_ascii=False)
+
+
+def _get_stats():
+    arc = _arc()
+    sw = os.path.join(_root(), "state", "summary.jsonl")
+    total = 0
+    week_done = 0
+    week_start = (datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                  - datetime.timedelta(days=datetime.now().weekday()))
+    if os.path.isfile(sw):
+        try:
+            with open(sw, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            entry = json.loads(line)
+                            total += 1
+                            ts = entry.get("ts", "")
+                            if ts >= week_start.isoformat(timespec="seconds"):
+                                week_done += 1
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    return {"total_archived": total, "this_week": week_done}
+
+
 # ═══════════════════════════════════════
 # HTTP 路由
 # ═══════════════════════════════════════
@@ -557,12 +753,13 @@ def _load_dashboard():
 def _register_routes(context):
     from quart import Response, jsonify, request as qr
 
-    _DASHBOARD_HTML = _load_dashboard()
+    try:
+        _DASHBOARD_HTML = _load_dashboard()
+    except Exception as e:
+        _DASHBOARD_HTML = "<h1>Dashboard Load Error</h1>"
+        logger.warning(f"dashboard.html 加载失败，使用兜底页面: {e}")
 
-    logger.info(f"[task_scaffold] _root() = {_root()}")
-    logger.info(f"[task_scaffold] _cur()  = {_cur()}")
-    logger.info(f"[task_scaffold] _arc()  = {_arc()}")
-    logger.info(f"[task_scaffold] state exists = {os.path.isfile(os.path.join(_cur(), '00_task_state.json'))}")
+    logger.info(f"[task_scaffold] data_root = {_root()}")
 
     async def dashboard():
         return Response(_DASHBOARD_HTML, content_type="text/html; charset=utf-8")
@@ -666,6 +863,9 @@ def _register_routes(context):
     async def api_mode_get():
         return jsonify({"mode": _get_mode()})
 
+    async def api_stats():
+        return jsonify(_get_stats())
+
     async def api_mode_set():
         try:
             body = await qr.get_json()
@@ -674,7 +874,7 @@ def _register_routes(context):
             m = ""
         if m not in ("plan", "build"):
             return jsonify({"ok": False, "error": "mode 必须是 plan 或 build"})
-        _set_mode(m, context)
+        _set_mode(m)
         _log_activity("System", "系统", f"模式切换 → {m}")
         return jsonify({"ok": True, "mode": m})
 
@@ -688,20 +888,11 @@ def _register_routes(context):
         ("/task_scaffold/api/mode", api_mode_set, ["POST"], "切换模式"),
         ("/task_scaffold/api/archive/<slug>/summary", api_archive_summary, ["GET"], "归档摘要 JSON"),
         ("/task_scaffold/api/archive/<slug>/file/<name>", api_archive_file, ["GET"], "归档文件内容"),
+        ("/task_scaffold/api/stats", api_stats, ["GET"], "统计 JSON"),
     ]
 
     for path, handler, methods, desc in _ROUTES:
         context.register_web_api(path, handler, methods, desc)
-
-    try:
-        app = getattr(context, 'app', None) or getattr(context, '_app', None) or getattr(context, 'web_app', None)
-        if app:
-            for path, handler, methods, desc in _ROUTES:
-                if "<" not in path:
-                    app.add_url_rule(path, path.replace("/", "_"), handler, methods=methods)
-            logger.info(f"已通过 Quart app 注册 {len(_ROUTES)} 条路由")
-    except Exception as e:
-        logger.debug(f"Quart app 路由注册跳过: {e}")
 
     logger.info(f"WebUI 路由已注册: {' | '.join(p for p,_,_,_ in _ROUTES)}")
 
@@ -709,13 +900,12 @@ def _register_routes(context):
 class Main(star.Star):
     def __init__(self, context, config=None):
         super().__init__(context)
-        self.ctx = context
         tl = TaskListTool()
         ta = TaskArchiveTool()
         context.add_llm_tools(tl, ta)
         _register_routes(context)
         if _get_mode() == "plan":
-            _set_mode("build", context)
+            _set_mode("build")
             logger.info("启动时检测到 plan 模式残留，已强制重置为 build")
         self._tray_stop = None
         try:
@@ -814,29 +1004,38 @@ class Main(star.Star):
     @register_on_llm_request()
     async def _on_llm_req(self, event, request) -> None:
         mode = _get_mode()
-        global _LAST_APPLIED_MODE
-        if mode != _LAST_APPLIED_MODE:
-            if mode == "plan":
-                _switch_to_plan(self.ctx)
-            else:
-                _switch_to_build(self.ctx)
-            _LAST_APPLIED_MODE = mode
-        if mode == "plan":
-            ft = getattr(request, 'func_tool', None)
-            if ft and hasattr(ft, 'remove_tool'):
-                for name in _PLAN_DISABLED_TOOLS:
-                    try:
-                        ft.remove_tool(name)
-                    except Exception:
-                        pass
-
-    @filter.on_decorating_result()
-    async def _on_decorating_result(self, event):
-        if _get_mode() != "plan":
+        if mode != "plan":
             return
-        note = "\n\n[系统] 当前处于 plan（只读）模式，写工具已禁用。需要执行写入操作请在 WebUI 切换为 Build。"
-        try:
-            result = event.get_result()
-            event.set_result(result + note)
-        except Exception as e:
-            logger.debug(f"注入 plan 提示失败: {e}")
+        funcs = getattr(request, 'functions', None) or getattr(request, 'tools', None) or getattr(request, 'func_tool', None)
+        removed = []
+        if funcs:
+            keep = []
+            for f in funcs:
+                name = getattr(f, 'name', '') or (f.get('name', '') if isinstance(f, dict) else '')
+                if name in _EXEMPT_TOOLS:
+                    keep.append(f)
+                    continue
+                desc = getattr(f, 'description', '') or (f.get('description', '') if isinstance(f, dict) else '')
+                if name in _ALWAYS_WRITE or any(kw in (desc.lower() if desc else '') for kw in _WRITE_KEYWORDS):
+                    removed.append(name)
+                else:
+                    keep.append(f)
+            if removed:
+                if hasattr(request, 'functions'):
+                    request.functions = keep
+                if hasattr(request, 'tools'):
+                    request.tools = keep
+                if hasattr(request, 'func_tool') and hasattr(request.func_tool, 'remove_tool'):
+                    for name in removed:
+                        try:
+                            request.func_tool.remove_tool(name)
+                        except Exception:
+                            pass
+                logger.info(f"plan 模式屏蔽 {len(removed)} 个写工具: {removed[:8]}{'...' if len(removed)>8 else ''}")
+        prompt = getattr(request, 'prompt', None)
+        if prompt:
+            request.prompt = prompt + (
+                "\n\n[Plan 模式] 写操作与命令执行类工具已禁用，只能阅读和分析。"
+                "如需写入请告知用户切换到 Build。"
+            )
+
