@@ -326,36 +326,6 @@ _TASK_LIST_DESC = (
     "action: start/create/update/complete/status/load_template/list_templates/checkpoint/rollback/list_checkpoints"
 )
 
-_TASK_LIST_PARAMS = {
-    "type": "object",
-    "properties": {
-        "action": {
-            "type": "string",
-            "enum": ["start", "update", "complete", "status", "load_template", "list_templates", "checkpoint", "rollback", "list_checkpoints"],
-            "description": "操作模式",
-        },
-        "todos": {
-            "type": "array",
-            "description": "任务列表，全量覆写。start/update时必填",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "content": {"type": "string", "description": "任务描述"},
-                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"]},
-                    "priority": {"type": "string", "enum": ["high", "medium", "low"], "description": "优先级，可选"},
-                },
-                "required": ["content", "status"],
-            },
-        },
-        "workspace_slug": {"type": "string", "description": "工作空间目录名，可选"},
-        "title": {"type": "string", "description": "任务标题，可选"},
-        "cwd": {"type": "string", "description": "当前工作目录，可选"},
-        "tags": {"type": "array", "items": {"type": "string"}, "description": "标签，start时可选"},
-        "template": {"type": "string", "description": "模板名，load_template时必填"},
-        "checkpoint_name": {"type": "string", "description": "检查点名，checkpoint/rollback时必填"},
-    },
-    "required": ["action"],
-}
 
 _TASK_ARCHIVE_DESC = (
     "已归档长任务查询。当需要召回历史任务细节、搜索过往决策或查看过往任务列表时调用。"
@@ -1005,6 +975,13 @@ class Main(star.Star):
     async def _on_llm_req(self, event, request) -> None:
         mode = _get_mode()
         if mode != "plan":
+            prompt = getattr(request, 'prompt', None)
+            if prompt:
+                parts = getattr(request, 'extra_user_content_parts', None)
+                if parts is not None:
+                    parts.append({"type": "text", "text": (
+                        "\n[Build 模式] 所有工具可用，可执行任意读写操作。"
+                    )})
             return
         funcs = getattr(request, 'functions', None) or getattr(request, 'tools', None) or getattr(request, 'func_tool', None)
         removed = []
@@ -1034,8 +1011,21 @@ class Main(star.Star):
                 logger.info(f"plan 模式屏蔽 {len(removed)} 个写工具: {removed[:8]}{'...' if len(removed)>8 else ''}")
         prompt = getattr(request, 'prompt', None)
         if prompt:
-            request.prompt = prompt + (
-                "\n\n[Plan 模式] 写操作与命令执行类工具已禁用，只能阅读和分析。"
-                "如需写入请告知用户切换到 Build。"
-            )
+            parts = getattr(request, 'extra_user_content_parts', None)
+            if parts is not None:
+                parts.append({"type": "text", "text": (
+                    "\n[Plan 模式] 写操作与命令执行类工具已禁用，只能阅读和分析。"
+                    "如需写入请告知用户切换到 Build。"
+                )})
+
+    @filter.on_decorating_result()
+    async def _on_decorating_result(self, event):
+        if _get_mode() != "plan":
+            return
+        note = "\n\n[系统] 当前处于 plan（只读）模式，写工具已禁用。需要执行写入操作请在 WebUI 切换为 Build。"
+        try:
+            result = event.get_result()
+            event.set_result(result + note)
+        except Exception as e:
+            logger.debug(f"注入 plan 提示失败: {e}")
 

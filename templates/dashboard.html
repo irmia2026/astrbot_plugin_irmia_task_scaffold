@@ -251,7 +251,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     <div class="panel-body" id="live-body" style="display:flex;align-items:center;justify-content:center"><div class="empty-state"><div class="empty-box"></div><h4>未记录到活动</h4></div></div>
   </div>
   <div class="panel" id="archive-panel" style="display:none;flex:1">
-    <div class="panel-header">已归档长任务</div>
+    <div class="panel-header">已归档长任务 <span id="stats-bar" style="font-weight:400;margin-left:auto;font-size:10px"></span></div>
     <div class="panel-body">
       <div class="archive-wrap">
         <input class="archive-search" type="text" placeholder="搜索归档..." id="arc-search" oninput="filterArchive()">
@@ -528,6 +528,12 @@ async function loadMode(){
   try{const r=await fetch(API+'/mode');const m=await r.json();applyMode(m.mode||'build');}catch(e){}
 }
 
+async function loadStats(){
+  try{const r=await fetch(API+'/stats');const s=await r.json();
+    document.getElementById('stats-bar').textContent=s.total_archived+' 归档 · 本周 '+s.this_week;
+  }catch(e){}
+}
+
 function applyMode(m){
   const pill=document.getElementById('mode-pill');
   const panel=document.getElementById('task-panel');
@@ -543,13 +549,14 @@ async function toggleMode(){
 
 setInterval(()=>{
   document.getElementById('nav-time').textContent=' · '+ts();
-  if(typeof E==='undefined'||API!=='__EMBEDDED__'){loadCurrent();loadActivity();loadMode();}
+  if(typeof E==='undefined'||API!=='__EMBEDDED__'){loadCurrent();loadActivity();loadMode();loadStats();}
 },3000);
 
 loadCurrent();
 loadArchives();
 loadActivity();
 loadMode();
+loadStats();
 </script>
 </body>
 </html>
