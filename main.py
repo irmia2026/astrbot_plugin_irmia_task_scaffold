@@ -6,8 +6,15 @@ from datetime import datetime
 from astrbot.api import FunctionTool as _FT, logger, star
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.core.star.register import register_on_llm_request
+from astrbot.core.agent.message import TextPart
 
 _VS = {"pending", "in_progress", "completed", "cancelled"}
+
+_SESSION_TOKENS = 0
+_SESSION_TOKENS_IN = 0
+_SESSION_TOKENS_OUT = 0
+_LLM_PROVIDER = ""
+_AGENT_NAME = ""
 
 _WRITE_KEYWORDS = [
     "write", "edit", "patch", "save", "modify", "create",
@@ -325,6 +332,37 @@ _TASK_LIST_DESC = (
     "日常闲聊切勿调用。状态查询零副作用（只读磁盘，不修改任何内容）。"
     "action: start/create/update/complete/status/load_template/list_templates/checkpoint/rollback/list_checkpoints"
 )
+
+_TASK_LIST_PARAMS = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": ["start", "update", "complete", "status", "load_template", "list_templates", "checkpoint", "rollback", "list_checkpoints"],
+            "description": "操作模式",
+        },
+        "todos": {
+            "type": "array",
+            "description": "任务列表，全量覆写。start/update时必填",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "任务描述"},
+                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"]},
+                    "priority": {"type": "string", "enum": ["high", "medium", "low"], "description": "优先级，可选"},
+                },
+                "required": ["content", "status"],
+            },
+        },
+        "workspace_slug": {"type": "string", "description": "工作空间目录名，可选"},
+        "title": {"type": "string", "description": "任务标题，可选"},
+        "cwd": {"type": "string", "description": "当前工作目录，可选"},
+        "tags": {"type": "array", "items": {"type": "string"}, "description": "标签，start时可选"},
+        "template": {"type": "string", "description": "模板名，load_template时必填"},
+        "checkpoint_name": {"type": "string", "description": "检查点名，checkpoint/rollback时必填"},
+    },
+    "required": ["action"],
+}
 
 
 _TASK_ARCHIVE_DESC = (
@@ -676,6 +714,49 @@ def _get_stats():
     return {"total_archived": total, "this_week": week_done}
 
 
+_TOKEN_FILE = None
+
+def _token_fp():
+    global _TOKEN_FILE
+    if _TOKEN_FILE is None:
+        _TOKEN_FILE = os.path.join(_root(), "state", "tokens.jsonl")
+    return _TOKEN_FILE
+
+
+def _record_token_usage(input_tokens: int, output_tokens: int):
+    fp = _token_fp()
+    sd = os.path.dirname(fp)
+    os.makedirs(sd, exist_ok=True)
+    line = json.dumps({"ts": datetime.now().isoformat(timespec="seconds"),
+                       "i": input_tokens, "o": output_tokens}, ensure_ascii=False)
+    with open(fp, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+    _trim_line_file(fp, 500)
+
+
+def _get_token_stats():
+    global _SESSION_TOKENS, _SESSION_TOKENS_IN, _SESSION_TOKENS_OUT
+    month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_total = 0
+    fp = _token_fp()
+    if os.path.isfile(fp):
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            entry = json.loads(line)
+                            if entry.get("ts", "") >= month_start.isoformat(timespec="seconds"):
+                                month_total += entry.get("i", 0) + entry.get("o", 0)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    return {"session_total": _SESSION_TOKENS, "session_in": _SESSION_TOKENS_IN,
+            "session_out": _SESSION_TOKENS_OUT, "month_total": month_total}
+
+
 # ═══════════════════════════════════════
 # HTTP 路由
 # ═══════════════════════════════════════
@@ -685,8 +766,18 @@ _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 _ACTIVITY_WRITE_COUNT = 0
 
+def _clear_activity():
+    fp = os.path.join(_root(), "state", "activity.jsonl")
+    if os.path.isfile(fp):
+        try:
+            os.remove(fp)
+        except Exception:
+            pass
+
+
 def _log_activity(agent: str, status: str, detail: str, tool: str = None, task_summary: str = None):
     global _ACTIVITY_WRITE_COUNT
+    agent = agent or "Agent"
     state_dir = os.path.join(_root(), "state")
     os.makedirs(state_dir, exist_ok=True)
     entry = {"ts": datetime.now().strftime("%H:%M:%S"), "agent": agent, "status": status,
@@ -788,6 +879,7 @@ def _register_routes(context):
                                     completed_at = line[1:20]
                     items.append({"slug": d, "completed_at": completed_at, "count": len(tds),
                                   "completed": comp, "tags": st.get("tags", []),
+                                  "title": st.get("title", "") or (tds[0]["content"][:60] if tds else ""),
                                   "summary": tds[0]["content"][:60] if tds else ""})
         logger.info(f"[task_scaffold] api_archives → {len(items)} items")
         return jsonify(items[:50])
@@ -836,6 +928,15 @@ def _register_routes(context):
     async def api_stats():
         return jsonify(_get_stats())
 
+    async def api_status():
+        global _LLM_PROVIDER
+        model = _LLM_PROVIDER or "—"
+        tokens = _get_token_stats()
+        return jsonify({
+            "provider": model,
+            "tokens": tokens,
+        })
+
     async def api_mode_set():
         try:
             body = await qr.get_json()
@@ -859,6 +960,8 @@ def _register_routes(context):
         ("/task_scaffold/api/archive/<slug>/summary", api_archive_summary, ["GET"], "归档摘要 JSON"),
         ("/task_scaffold/api/archive/<slug>/file/<name>", api_archive_file, ["GET"], "归档文件内容"),
         ("/task_scaffold/api/stats", api_stats, ["GET"], "统计 JSON"),
+        ("/task_scaffold/api/status", api_status, ["GET"], "运行状态 JSON"),
+        ("/task_scaffold/api/ping", lambda: jsonify({"ok": True}), ["GET"], "心跳检测"),
     ]
 
     for path, handler, methods, desc in _ROUTES:
@@ -874,6 +977,7 @@ class Main(star.Star):
         ta = TaskArchiveTool()
         context.add_llm_tools(tl, ta)
         _register_routes(context)
+        _clear_activity()
         if _get_mode() == "plan":
             _set_mode("build")
             logger.info("启动时检测到 plan 模式残留，已强制重置为 build")
@@ -899,17 +1003,26 @@ class Main(star.Star):
                 ts = "任务完成汇报"
             elif act == "start":
                 ts = f"启动 {len(tool_args.get('todos',[]))} 项任务" if isinstance(tool_args, dict) else ""
-        _log_activity("Miria", "执行中", f"调用 {name}" if not ts else ts, tool=name, task_summary=detail)
+        _log_activity(_AGENT_NAME, "执行中", f"调用 {name}" if not ts else ts, tool=name, task_summary=detail)
 
     @filter.on_llm_response()
     async def _on_response(self, event: AstrMessageEvent, resp):
+        global _SESSION_TOKENS, _SESSION_TOKENS_IN, _SESSION_TOKENS_OUT, _LLM_PROVIDER
         text = str(resp.message) if hasattr(resp, 'message') else str(resp)
         preview = text[:30].replace("\n", " ") if text else ""
-        _log_activity("Miria", "回复中", f"回复{' · ' + preview if preview else '…'}")
+        _log_activity(_AGENT_NAME or "Agent", "回复中", f"回复{' · ' + preview if preview else '…'}")
+        usage = getattr(resp, 'usage', None)
+        if usage:
+            i = usage.input
+            o = usage.output
+            _SESSION_TOKENS += i + o
+            _SESSION_TOKENS_IN += i
+            _SESSION_TOKENS_OUT += o
+            _record_token_usage(i, o)
 
     @filter.on_agent_done()
     async def _on_done(self, event: AstrMessageEvent, run_context, resp):
-        _log_activity("Miria", "待命中", "—")
+        _log_activity(_AGENT_NAME, "待命中", "—")
 
     @filter.on_llm_tool_respond()
     async def _on_tool_done(self, event: AstrMessageEvent, tool, tool_args, tool_result):
@@ -969,19 +1082,36 @@ class Main(star.Star):
         done = all(t.get("status") in ("completed", "cancelled") for t in tds)
         if done:
             _do_archive()
-            _log_activity("Miria", "任务完成", f"全部 {len(tds)} 项任务完成，已自动归档", tool=name)
+            _log_activity(_AGENT_NAME, "任务完成", f"全部 {len(tds)} 项任务完成，已自动归档", tool=name)
 
     @register_on_llm_request()
     async def _on_llm_req(self, event, request) -> None:
+        global _AGENT_NAME
+        if not _AGENT_NAME:
+            try:
+                pm = getattr(self.context, 'persona_manager', None)
+                if pm and pm.personas_v3:
+                    sel = pm.selected_default_persona_v3
+                    name = sel.get("name", "") if sel else ""
+                    if name and name not in ("default", "_chatui_default_"):
+                        _AGENT_NAME = name
+                    elif pm.personas_v3:
+                        for p in pm.personas_v3:
+                            n = p.get("name", "")
+                            if n and n not in ("default", "_chatui_default_"):
+                                _AGENT_NAME = n
+                                break
+            except Exception:
+                pass
+            if not _AGENT_NAME:
+                _AGENT_NAME = "Agent"
         mode = _get_mode()
         if mode != "plan":
-            prompt = getattr(request, 'prompt', None)
-            if prompt:
-                parts = getattr(request, 'extra_user_content_parts', None)
-                if parts is not None:
-                    parts.append({"type": "text", "text": (
-                        "\n[Build 模式] 所有工具可用，可执行任意读写操作。"
-                    )})
+            parts = getattr(request, 'extra_user_content_parts', None)
+            if parts is not None:
+                part = TextPart(text="\n[Build 模式] 所有工具可用，可执行任意读写操作。")
+                part.mark_as_temp()
+                parts.append(part)
             return
         funcs = getattr(request, 'functions', None) or getattr(request, 'tools', None) or getattr(request, 'func_tool', None)
         removed = []
@@ -1009,14 +1139,14 @@ class Main(star.Star):
                         except Exception:
                             pass
                 logger.info(f"plan 模式屏蔽 {len(removed)} 个写工具: {removed[:8]}{'...' if len(removed)>8 else ''}")
-        prompt = getattr(request, 'prompt', None)
-        if prompt:
-            parts = getattr(request, 'extra_user_content_parts', None)
-            if parts is not None:
-                parts.append({"type": "text", "text": (
-                    "\n[Plan 模式] 写操作与命令执行类工具已禁用，只能阅读和分析。"
-                    "如需写入请告知用户切换到 Build。"
-                )})
+        parts = getattr(request, 'extra_user_content_parts', None)
+        if parts is not None:
+            part = TextPart(text=(
+                "\n[Plan 模式] 写操作与命令执行类工具已禁用，只能阅读和分析。"
+                "如需写入请告知用户切换到 Build。"
+            ))
+            part.mark_as_temp()
+            parts.append(part)
 
     @filter.on_decorating_result()
     async def _on_decorating_result(self, event):
