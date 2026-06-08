@@ -1,0 +1,137 @@
+"""常量、模板、工具描述、全局可变变量。零依赖（不 import 本项目其他模块）。"""
+
+_VS = {"pending", "in_progress", "completed", "cancelled"}
+
+_SESSION_TOKENS = 0
+_SESSION_TOKENS_IN = 0
+_SESSION_TOKENS_CACHED = 0
+_SESSION_TOKENS_OUT = 0
+_LLM_PROVIDER = ""
+_AGENT_NAME = ""
+_CONTEXT_LIMIT = 200000  # 首次运行时从 config.yaml 或自动检测覆盖
+
+
+def apply_config_extras():
+    """将 config.yaml 的扩展关键词/豁免工具合并到常量列表。"""
+    global _CONTEXT_LIMIT
+    from ._config import get as cfg
+    extra_kw = cfg("extra_write_keywords", [])
+    extra_ex = cfg("extra_exempt_tools", [])
+    limit = cfg("context_limit", 0)
+    if limit > 0:
+        _CONTEXT_LIMIT = limit
+    for kw in extra_kw:
+        if kw not in _WRITE_KEYWORDS:
+            _WRITE_KEYWORDS.append(kw)
+    for t in extra_ex:
+        if t not in _EXEMPT_TOOLS:
+            _EXEMPT_TOOLS.add(t)
+_LAST_CTX_SIZE = 0
+
+_WRITE_KEYWORDS = [
+    "write", "edit", "patch", "save", "modify", "create",
+    "delete", "remove", "execute", "run", "send",
+    "commit", "push", "deploy", "start",
+    "stop", "restart", "schedule", "upload", "publish",
+    "release", "merge", "install", "uninstall",
+    "rollback", "unzip",
+    "部署", "安装", "删除", "写入", "创建", "修改", "编辑",
+    "执行", "运行", "下载", "上传", "提交", "推送", "发布",
+    "合并", "卸载", "回滚", "解压", "压缩", "重启",
+]
+_ALWAYS_WRITE = {"astrbot_execute_shell", "astrbot_execute_python"}
+_EXEMPT_TOOLS = {"task_list", "task_archive"}
+
+_RT = "# 调研\n\n*（在此记录参考来源、竞品分析、技术决策依据）*\n\n## 参考来源\n- \n\n## 技术对比\n- \n\n## 决策记录\n- \n"
+_DT = "# 设计\n\n*（在此记录架构决策、接口定义、数据流图）*\n\n## 架构决策\n- \n\n## 接口定义\n- \n\n## 数据流\n- \n"
+_NT = "# 备忘\n\n*（在此记录易被截断上下文遗忘的高价值信息、探索成果、关键发现）*\n\n"
+
+_TASK_LIST_DESC = (
+    "长任务进度追踪。仅在需要多步执行、多文件修改或预计持续多轮的复杂任务时调用。"
+    "日常闲聊、简单问答、单文件小改、代码解释、文档查询切勿调用。"
+    "一旦进入长任务模式(start成功)，之后所有子任务进度都用update更新，绝不再调start。"
+    "工作区有04_note.md，可记录易被截断上下文遗忘的高价值信息与探索成果。"
+    "示例——应当追踪: 实现新功能、修复复杂Bug、大规模重构、多文件审查、跨模块改动。"
+    "不追踪: 解释概念、小改一行、查API用法、聊天问候。"
+    "start时必须提供简短概括性标题(title)，禁止用第一个子任务内容当标题。"
+    "action: start/create/update/complete/status/load_template/list_templates/checkpoint/rollback/list_checkpoints"
+)
+
+_TASK_LIST_PARAMS = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": ["start", "update", "complete", "status", "load_template", "list_templates", "checkpoint", "rollback", "list_checkpoints"],
+            "description": "操作模式",
+        },
+        "todos": {
+            "type": "array",
+            "description": "任务列表，全量覆写。start/update时必填",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "content": {"type": "string", "description": "任务描述"},
+                    "status": {"type": "string", "enum": ["pending", "in_progress", "completed", "cancelled"]},
+                    "priority": {"type": "string", "enum": ["high", "medium", "low"], "description": "优先级，可选"},
+                },
+                "required": ["content", "status"],
+            },
+        },
+        "workspace_slug": {"type": "string", "description": "工作空间目录名，可选"},
+        "title": {"type": "string", "description": "任务标题，可选"},
+        "cwd": {"type": "string", "description": "当前工作目录，可选"},
+        "tags": {"type": "array", "items": {"type": "string"}, "description": "标签，start时可选"},
+        "template": {"type": "string", "description": "模板名，load_template时必填"},
+        "checkpoint_name": {"type": "string", "description": "检查点名，checkpoint/rollback时必填"},
+    },
+    "required": ["action"],
+}
+
+_TASK_ARCHIVE_DESC = (
+    "已归档长任务查询。当需要召回历史任务细节、搜索过往决策或查看过往任务列表时调用。"
+    "action: list(列出最近归档)/read(读取指定归档文件，slug和file必填)/search(全文搜索关键词)"
+)
+
+_TASK_ARCHIVE_PARAMS = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["list", "read", "search"]},
+        "slug": {"type": "string", "description": "归档标识，read时必填"},
+        "file": {"type": "string", "description": "文件名，read时必填"},
+        "keyword": {"type": "string", "description": "搜索词，search时必填"},
+    },
+    "required": ["action"],
+}
+
+_BUILTIN_TEMPLATES = {
+    "feature_impl": {
+        "title": "功能实现",
+        "todos": [
+            {"content": "调研技术方案与参考实现", "status": "pending", "priority": "high"},
+            {"content": "设计架构与接口", "status": "pending", "priority": "high"},
+            {"content": "编写核心实现代码", "status": "pending", "priority": "high"},
+            {"content": "编写单元测试", "status": "pending", "priority": "medium"},
+            {"content": "集成测试与文档更新", "status": "pending", "priority": "medium"},
+        ]
+    },
+    "bug_fix": {
+        "title": "Bug 修复",
+        "todos": [
+            {"content": "复现 Bug 并确认根因", "status": "pending", "priority": "high"},
+            {"content": "定位问题代码", "status": "pending", "priority": "high"},
+            {"content": "实施修复", "status": "pending", "priority": "high"},
+            {"content": "回归验证", "status": "pending", "priority": "medium"},
+        ]
+    },
+    "code_review": {
+        "title": "代码审查",
+        "todos": [
+            {"content": "通读源码理解整体结构", "status": "pending", "priority": "high"},
+            {"content": "识别潜在问题与改进点", "status": "pending", "priority": "high"},
+            {"content": "编写审查报告", "status": "pending", "priority": "medium"},
+            {"content": "实施修复与优化", "status": "pending", "priority": "medium"},
+            {"content": "最终验证", "status": "pending", "priority": "medium"},
+        ]
+    },
+}

@@ -32,7 +32,7 @@
 [data-theme="dark"] .todo-num.waiting{background:#334155;color:var(--muted)}
 [data-theme="dark"] .todo-pill.low{background:#334155;color:var(--muted)}
 [data-theme="dark"] .live-row{border-bottom-color:rgba(51,65,85,.5)}
-[data-theme="dark"] .arc-group-head:hover{background:#1e293b}
+[data-theme="dark"] .arc-card:hover{border-color:#475569}
 [data-theme="dark"] .skeleton{background:linear-gradient(90deg,var(--border)25%,#334155 50%,var(--border)75%);background-size:200% 100%}
 [data-theme="dark"] .file-preview-body{color:#94a3b8}
 [data-theme="dark"] .mode-slider{box-shadow:0 1px 2px rgba(0,0,0,.3)}
@@ -46,7 +46,7 @@ body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
   background-image:radial-gradient(circle,rgba(59,130,246,.04) 1px,transparent 1px);
   background-size:24px 24px;}
-#app{display:flex;height:72.7vh;padding:8px;gap:8px;position:relative;z-index:1;zoom:1.375}
+#app{display:flex;flex-wrap:nowrap;height:72.7vh;padding:8px;gap:8px;position:relative;z-index:1;zoom:1.375}
 
 #nav-col{width:var(--nav-w);flex-shrink:0;display:flex;flex-direction:column;gap:6px}
 .nav-panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
@@ -59,11 +59,12 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .nav-status{display:flex;align-items:center;gap:8px;padding:10px 14px;font-size:11px;color:var(--text2)}
 .nav-status .sdot{width:7px;height:7px;border-radius:50%;background:var(--emerald);box-shadow:0 0 0 3px var(--emerald-light);animation:dotLive 2s infinite}
 .nav-status .sdot.off{background:var(--muted);box-shadow:none;animation:none}
+.nav-status .offline{color:var(--rose)!important}
 @keyframes dotLive{0%,100%{opacity:1}50%{opacity:.4}}
 .theme-toggle{width:40px;height:22px;margin-left:auto;border-radius:20px;cursor:pointer;background:#d4d4d8;position:relative;flex-shrink:0;transition:background .3s}
 .theme-toggle .knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:all .3s var(--spring);box-shadow:0 1px 3px rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;font-size:9px}
 [data-theme="dark"] .theme-toggle{background:#475569}
-[data-theme="dark"] .theme-toggle .knob{left:20px;background:#60a5fa;box-shadow:0 0 6px rgba(96,165,250,.4)}
+[data-theme="dark"] .theme-toggle .knob{left:20px;background:#60a5fa;box-shadow:0 0 6px rgba(96,165,250,.4);color:#fff}
 
 .mode-pill{display:inline-flex;position:relative;background:var(--border);border-radius:20px;padding:2px;cursor:pointer;box-shadow:var(--shadow);transition:box-shadow .2s;user-select:none}
 .mode-pill:hover{box-shadow:var(--shadow-hover)}
@@ -155,27 +156,21 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .archive-wrap{padding:12px 18px}
 .archive-search{width:100%;padding:7px 12px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--font);background:var(--surface);margin-bottom:12px}
 .archive-search:focus{outline:none;border-color:var(--blue)}
-.arc-group{margin-bottom:3px}
-.arc-group-head{display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer;border-radius:7px;transition:background .1s}
-.arc-group-head:hover{background:#f8fafc}
-.arc-group-icon{width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;background:var(--blue-light);position:relative}
-.arc-group-icon::after{content:'';width:12px;height:9px;border:2px solid var(--blue);border-top-width:4px;border-radius:2px 2px 0 0;border-bottom:none}
-.arc-group-name{font-size:13px;font-weight:600}
-.arc-group-count{font-size:10px;color:var(--text2)}
-.arc-group-arr{font-size:8px;color:var(--muted);transition:transform .25s var(--spring);margin-left:auto}
-.arc-group.open .arc-group-arr{transform:rotate(90deg)}
-.arc-items{display:none;padding:1px 0 1px 10px}
-.arc-group.open .arc-items{display:block}
-.arc-item{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:10px 14px;margin-bottom:3px;cursor:pointer;transition:all .1s;font-size:12px}
-.arc-item:hover{border-color:var(--blue)}
-.arc-item-head{display:flex;align-items:center;justify-content:space-between}
-.arc-item-title{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:240px}
-.arc-item-meta{font-size:10px;color:var(--text2);margin-top:1px}
-.arc-item-badge{font-size:9px;padding:1px 5px;border-radius:4px;font-weight:600}
-.arc-item-badge.done{background:var(--emerald-light);color:var(--emerald)}
-.arc-item-badge.partial{background:var(--amber-light);color:var(--amber)}
+.arc-month{font-size:11px;font-weight:700;color:var(--text);padding:10px 0 6px;display:flex;align-items:baseline;gap:8px}
+.arc-month-n{font-size:10px;font-weight:400;color:var(--muted)}
+.arc-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:6px;cursor:pointer;transition:border-color .1s}
+.arc-card:hover{border-color:var(--blue)}
+.arc-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+.arc-card-title{font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:8px}
+.arc-card-badge{font-size:9px;font-weight:700;padding:2px 7px;border-radius:10px;background:var(--amber-light);color:var(--amber);white-space:nowrap}
+.arc-card-badge.done{background:var(--emerald-light);color:var(--emerald)}
+.arc-card-bar{height:4px;background:var(--border);border-radius:2px;margin-bottom:6px;overflow:hidden}
+.arc-card-bar div{height:100%;background:var(--blue);border-radius:2px;transition:width .3s}
+.arc-card-meta{font-size:10px;color:var(--muted);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.arc-card-meta b{font-weight:500;color:var(--blue);font-size:9px;padding:1px 6px;background:var(--blue-light);border-radius:4px}
+.arc-card-slug{font-family:Consolas,monospace;font-size:9px;color:var(--muted)}
 .arc-item-detail{display:none;padding-top:8px;margin-top:6px;border-top:1px solid var(--border);font-size:11px}
-.arc-item.open .arc-item-detail{display:block}
+.arc-card.open .arc-item-detail{display:block}
 
 ::-webkit-scrollbar{width:3px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -211,13 +206,12 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 @media(max-width:900px){#file-col{display:none}}
 @media(max-width:640px){#nav-col{width:160px}}
 
-#status-panel{position:fixed;bottom:12px;right:12px;z-index:99;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px;font-size:11px;color:var(--text2);min-width:200px;box-shadow:0 4px 16px rgba(0,0,0,.06);display:flex;flex-direction:column;gap:5px}
-[data-theme="dark"] #status-panel{box-shadow:0 4px 16px rgba(0,0,0,.3)}
-#status-panel .st-row{display:flex;justify-content:space-between;align-items:center}
-#status-panel .st-row .st-label{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.3px}
-#status-panel .st-row .st-val{font-weight:600;color:var(--text);font-feature-settings:'tnum'}
-#status-panel .st-bar{height:3px;background:var(--border);border-radius:2px;margin:3px 0;overflow:hidden}
-#status-panel .st-bar div{height:100%;background:var(--blue);border-radius:2px;transition:width .5s var(--ease)}
+#status-panel{flex-shrink:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 14px;display:flex;flex-direction:column;gap:4px}
+#status-panel .st-row{display:flex;align-items:center;gap:10px;font-size:10px;color:var(--text2)}
+#status-panel .st-row span:first-child{color:var(--muted);font-size:9px}
+#status-panel .st-row .st-val{font-weight:600;color:var(--text);font-size:10px}
+#status-panel .st-bar{height:2px;background:var(--border);border-radius:1px;overflow:hidden;width:100%}
+#status-panel .st-bar div{height:100%;background:var(--blue);border-radius:1px;transition:width .5s var(--ease)}
 </style>
 </head>
 <body>
@@ -236,7 +230,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     </div>
   </div>
   <div class="nav-panel" style="flex-shrink:0">
-    <div class="nav-status"><span class="sdot"></span> AstrBot 在线 <span id="nav-time"></span><div class="theme-toggle" onclick="toggleTheme()" title="切换深色/浅色模式"><span class="knob">☀</span></div></div>
+    <div class="nav-status"><span class="sdot"></span> <span id="nav-status-text">AstrBot 在线</span> <span id="nav-time"></span><div class="theme-toggle" onclick="toggleTheme()" title="切换深色/浅色模式"><span class="knob">☀</span></div></div>
   </div>
 </div>
 
@@ -266,9 +260,10 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
       <div class="archive-wrap">
         <input class="archive-search" type="text" placeholder="搜索归档..." id="arc-search" oninput="filterArchive()">
         <div id="archive-list"><div class="empty-state"><div class="empty-box"></div><h4>加载中...</h4></div></div>
-      </div>
-    </div>
-  </div>
+</div>
+</div>
+</div>
+
 </div>
 
 <div id="file-col">
@@ -280,16 +275,12 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     <div class="file-preview-header" id="preview-title">选择文件查看</div>
     <div class="file-preview-body" id="preview-body"></div>
   </div>
-</div>
-
-</div>
-
 <div id="status-panel">
-  <div class="st-row"><span class="st-label">LLM API</span><span class="st-val" id="st-provider">—</span></div>
-  <div class="st-row"><span class="st-label">上下文用量</span><span class="st-val" id="st-ctx">—</span></div>
+  <div class="st-row"><span>API</span><span class="st-val" id="st-provider">—</span><span style="margin-left:auto">上下文</span><span class="st-val" id="st-ctx">—</span></div>
   <div class="st-bar"><div id="st-bar-fill" style="width:0%"></div></div>
-  <div class="st-row"><span class="st-label">本次启动</span><span class="st-val" id="st-session">—</span></div>
-  <div class="st-row"><span class="st-label">本月消耗</span><span class="st-val" id="st-month">—</span></div>
+</div>
+</div>
+
 </div>
 
 <script>
@@ -312,7 +303,11 @@ function toggleTheme(){
 
 async function checkOnline(){
   const dot=document.querySelector('.nav-status .sdot');
-  try{const r=await fetch(API+'/ping');dot.classList.toggle('off',!r.ok);}catch(e){dot.classList.add('off')}
+  const txt=document.getElementById('nav-status-text');
+  try{const r=await fetch(API+'/ping');
+    if(r.ok){dot.classList.remove('off');if(txt)txt.textContent='AstrBot 在线'}
+    else{dot.classList.add('off');if(txt)txt.textContent='AstrBot 离线'}
+  }catch(e){dot.classList.add('off');if(txt)txt.textContent='AstrBot 离线'}
 }
 let ST={current:null,archives:[],activeCat:'all',files:{},_cacheAct:'',_cacheCur:'',_lastActive:null},_rendered=new Set();
 
@@ -342,10 +337,9 @@ function switchView(v){
   const tp=document.getElementById('task-panel');
   const lp=document.getElementById('live-panel');
   const ap=document.getElementById('archive-panel');
-  if(cur){tp.style.display='flex';lp.style.display='flex';ap.style.display='none';tp.classList.add('fade')}
-  else{ap.style.display='flex';tp.style.display='none';lp.style.display='none';ap.classList.add('fade')}
+  if(cur){tp.style.display='flex';lp.style.display='flex';ap.style.display='none';tp.classList.add('fade');loadCurrent()}
+  else{ap.style.display='flex';tp.style.display='none';lp.style.display='none';ap.classList.add('fade');loadArchives()}
   setTimeout(()=>{tp.classList.remove('fade');ap.classList.remove('fade')},300);
-  if(!cur) loadArchives();
 }
 
 function _skelTask(){
@@ -377,7 +371,7 @@ async function loadCurrent(){
     tbody.innerHTML='<div class="empty-state"><div class="empty-house"></div><h4>未进入长任务模式</h4><p>告诉 Agent 你的计划，自动进入长任务模式</p></div>';
     tbody.style.display='flex';tbody.style.alignItems='center';tbody.style.justifyContent='center';
       document.getElementById('file-nav-items').innerHTML='';
-      document.getElementById('preview-body').textContent='';
+      if(document.getElementById('archive-panel').style.display!=='flex') document.getElementById('preview-body').textContent='';
       document.getElementById('task-status-bar').style.display='none';
       document.getElementById('cwd-text').textContent='未开始工作';
       return;
@@ -423,11 +417,11 @@ async function loadCurrent(){
   h+='</div>';
   tbody.innerHTML=h;
   setTimeout(()=>{const el=document.getElementById('pct-val');if(el)_animPct(el,pct)},50);
-  loadFiles();
+  if(!ST.current._stale) loadFiles();
 }
 
 function loadFiles(){
-  const files=['03_work_order.md','02_design.md','01_research.md','00_task_state.json','progress.log'];
+  const files=['03_work_order.md','02_design.md','01_research.md','04_note.md','00_task_state.json','progress.log'];
   const fi=document.getElementById('file-nav-items');
   let fl='';
   files.forEach(f=>{
@@ -481,15 +475,19 @@ function renderArchive(){
   });
   let h='';
   Object.keys(groups).sort().reverse().forEach(m=>{
-    h+='<div class="arc-group open"><div class="arc-group-head" onclick="this.parentElement.classList.toggle(\'open\')"><div class="arc-group-icon"></div><div><div class="arc-group-name">'+m+'</div><div class="arc-group-count">'+groups[m].length+' 个归档</div></div><span class="arc-group-arr"></span></div>';
-    h+='<div class="arc-items">';
+    h+='<div class="arc-month">'+m+'<span class="arc-month-n">'+groups[m].length+' 项</span></div>';
     groups[m].forEach(a=>{
-      const done=a.completed===a.count;
-      const sid=('ad-'+a.slug).replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g,'-');
+      const pct=a.count?Math.round((a.completed||0)/a.count*100):0;
+      const done=pct===100;
       const title=a.title||a.summary||'';
-      h+='<div class="arc-item" onclick="loadArchiveDetail(\''+esc(a.slug||'')+'\',this)"><div class="arc-item-head"><div><div class="arc-item-title">'+esc(title?title:a.slug||'')+'</div><div class="arc-item-meta"><span class="arc-item-badge '+(done?'done':'partial')+'">'+(done?' 完成':(a.completed||0)+'/'+(a.count||0))+'</span> · '+(a.completed_at||'').slice(0,10)+'</div></div><span style="color:var(--muted);font-size:9px">'+esc(a.slug||'')+'</span></div><div class="arc-item-detail" id="'+sid+'"></div></div>';
+      const sid=('ad-'+a.slug).replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g,'-');
+      h+='<div class="arc-card" onclick="loadArchiveDetail(\''+esc(a.slug||'')+'\',this)">';
+      h+='<div class="arc-card-top"><div class="arc-card-title">'+esc(title||a.slug||'')+'</div><div class="arc-card-badge '+(done?'done':'')+'">'+(done?'完成':(a.completed||0)+'/'+(a.count||0))+'</div></div>';
+      h+='<div class="arc-card-bar"><div style="width:'+pct+'%"></div></div>';
+      h+='<div class="arc-card-meta"><span>'+(a.completed_at||'').slice(0,10)+'</span><span class="arc-card-slug">'+esc(a.slug||'')+'</span>';
+      if(a.tags&&a.tags.length) h+='<span>'+a.tags.map(t=>'<b>'+esc(t)+'</b>').join(' ')+'</span>';
+      h+='</div><div class="arc-item-detail" id="'+sid+'"></div></div>';
     });
-    h+='</div></div>';
   });
   if(!h) h='<div class="empty-state"><div class="empty-box"></div><h4>没有找到匹配的归档</h4></div>';
   document.getElementById('archive-list').innerHTML=h;
@@ -568,12 +566,11 @@ async function loadStatus(){
   try{const r=await fetch(API+'/status');const s=await r.json();
     document.getElementById('st-provider').textContent=s.provider||'—';
     const t=s.tokens||{};
-    const ctx=t.session_in||0;
     function fmt(n){return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(n)}
-    document.getElementById('st-ctx').textContent=fmt(ctx)+' in';
-    document.getElementById('st-session').textContent=fmt(t.session_total||0);
-    document.getElementById('st-month').textContent=fmt(t.month_total||0);
-    const pct=ctx?Math.min(100,Math.round(ctx/200000*100)):0;
+    const limit=t.context_limit||200000;
+    const ctx=t.ctx_size||0;
+    const pct=limit?Math.min(100,Math.round(ctx/limit*100)):0;
+    document.getElementById('st-ctx').textContent=fmt(ctx)+' tokens / '+pct+'%';
     document.getElementById('st-bar-fill').style.width=pct+'%';
   }catch(e){}
 }

@@ -1,0 +1,178 @@
+"""TaskListTool 与 TaskArchiveTool。"""
+import json, os
+from dataclasses import dataclass, field
+
+from astrbot.api import FunctionTool as _FT
+from ._constants import _TASK_LIST_DESC, _TASK_LIST_PARAMS, _TASK_ARCHIVE_DESC, _TASK_ARCHIVE_PARAMS
+from ._paths import cur, arc
+from ._mode import get_mode
+from ._state import is_active, validate, gen_slug, summary, ok, err, init_ws, update_state
+from ._archive import gen_report, do_archive, get_recent_summaries
+from ._templates import load_template as _load_tpl, list_templates as _list_tpl
+from ._checkpoints import do_checkpoint, do_rollback, list_checkpoints
+
+
+@dataclass
+class TaskListTool(_FT):
+    func_type: str = "tool"
+    name: str = "task_list"
+    description: str = _TASK_LIST_DESC
+    parameters: dict = field(default_factory=lambda: _TASK_LIST_PARAMS)
+
+    async def call(self, context, action: str, todos: list = None, workspace_slug: str = "", tags: list = None, title: str = "", cwd: str = "", template: str = "", checkpoint_name: str = "") -> str:
+        try:
+            active = is_active()
+            mode = get_mode()
+            if action in ("start", "update", "complete") and mode == "plan":
+                return err("当前为 Plan 模式，写操作已锁定。请在 WebUI 中将 Plan 切换为 Build 后重试。")
+            if action == "status":
+                if not active:
+                    rec = get_recent_summaries(5)
+                    rpt = {"ok": True, "status": "idle", "summary": "IDLE — 未进入长任务模式"}
+                    if rec:
+                        rpt["recent"] = rec
+                        rpt["summary"] += f" （最近完成 {len(rec)} 项归档）"
+                    return json.dumps(rpt, ensure_ascii=False)
+                sp = os.path.join(cur(), "00_task_state.json")
+                with open(sp, "r", encoding="utf-8") as f:
+                    st = json.load(f)
+                tds = st.get("todos", [])
+                return ok(tds, summary=summary(tds), workspace="task_scaffolds/current/",
+                          status="active", slug=st.get("slug"),
+                          hint="使用 update 更新进度，切勿重复 start")
+
+            if action == "start":
+                if active:
+                    return err("已有活跃任务，请使用 update 更新当前任务进度，不要重复 start。用 task_list(action='status') 查看当前任务。")
+                if not todos:
+                    return err("start 需要提供 todos 列表")
+                e = validate(todos)
+                if e:
+                    return err(e)
+                if title and todos and title.strip() == todos[0].get("content", "")[:60].strip():
+                    return err("title 不能和第一个子任务内容相同，请写简短的概括性标题")
+                slug = gen_slug(workspace_slug or None)
+                fs = init_ws(todos, slug, tags, title, cwd)
+                return ok(todos, summary=summary(todos), workspace="task_scaffolds/current/",
+                          files=fs, action="workspace_created", slug=slug)
+
+            if action == "update":
+                if not todos:
+                    return err("update 需要提供 todos 列表")
+                e = validate(todos)
+                if e:
+                    return err(e)
+                if not active:
+                    slug = gen_slug(workspace_slug or None)
+                    fs = init_ws(todos, slug, cwd=cwd)
+                    return ok(todos, summary=summary(todos), workspace="task_scaffolds/current/",
+                              files=fs, action="workspace_created_implicit", slug=slug)
+                update_state(todos)
+                done = all(t.get("status") in ("completed", "cancelled") for t in todos)
+                if done:
+                    arc_result = do_archive()
+                    sl = arc_result.get("slug", "unknown") if arc_result else "unknown"
+                    return ok(todos, summary=f"全部完成 — 已归档到 archive/{sl}/",
+                              workspace=f"task_scaffolds/archive/{sl}/", action="archived")
+                return ok(todos, summary=summary(todos), workspace="task_scaffolds/current/", action="state_updated")
+
+            if action == "complete":
+                if not active:
+                    return err("未进入长任务模式，无需 complete。查看历史归档请用 task_archive(action='list')")
+                sp = os.path.join(cur(), "00_task_state.json")
+                with open(sp, "r", encoding="utf-8") as f:
+                    st = json.load(f)
+                tds = st.get("todos", [])
+                slug = st.get("slug", "unknown")
+                report = gen_report(tds, slug)
+                do_archive()
+                return json.dumps({"ok": True, "report": report, "archive_path": f"task_scaffolds/archive/{slug}/",
+                                   "summary": f"已归档: {slug}", "action": "completed"}, ensure_ascii=False)
+
+            if action == "load_template":
+                return _load_tpl(template)
+            if action == "list_templates":
+                return _list_tpl()
+            if action == "checkpoint":
+                return do_checkpoint(checkpoint_name)
+            if action == "rollback":
+                return do_rollback(checkpoint_name)
+            if action == "list_checkpoints":
+                return list_checkpoints()
+
+            return err(f"未知 action: {action}")
+        except Exception as e:
+            return err(str(e))
+
+
+@dataclass
+class TaskArchiveTool(_FT):
+    func_type: str = "tool"
+    name: str = "task_archive"
+    description: str = _TASK_ARCHIVE_DESC
+    parameters: dict = field(default_factory=lambda: _TASK_ARCHIVE_PARAMS)
+
+    async def call(self, context, action: str, slug: str = "", file: str = "", keyword: str = "") -> str:
+        try:
+            a = arc()
+            if action == "list":
+                items = []
+                dirs = []
+                if os.path.isdir(a):
+                    dirs = sorted([d for d in os.listdir(a) if os.path.isdir(os.path.join(a, d))], reverse=True)
+                    for d in dirs[:50]:
+                        sp = os.path.join(a, d, "00_task_state.json")
+                        if os.path.isfile(sp):
+                            with open(sp, "r", encoding="utf-8") as f:
+                                st = json.load(f)
+                            tds = st.get("todos", [])
+                            items.append({"slug": d, "count": len(tds),
+                                          "completed": sum(1 for t in tds if t.get("status") in ("completed", "cancelled")),
+                                          "tags": st.get("tags", []),
+                                          "summary": tds[0]["content"][:60] if tds else ""})
+                total = len(dirs)
+                return json.dumps({"ok": True, "archives": items[:20], "total": total,
+                                   "has_more": len(items) > 20}, ensure_ascii=False)
+
+            if action == "read":
+                if not slug or not file:
+                    return err("read 需要 slug 和 file 参数")
+                fp = os.path.join(a, slug, file)
+                if not os.path.isfile(fp) or not fp.startswith(os.path.abspath(a)):
+                    return err(f"文件不存在: {slug}/{file}")
+                with open(fp, "r", encoding="utf-8") as f:
+                    content = f.read()
+                return json.dumps({"ok": True, "slug": slug, "file": file,
+                                   "content": content[:5000],
+                                   "truncated": len(content) > 5000}, ensure_ascii=False)
+
+            if action == "search":
+                if not keyword:
+                    return err("search 需要 keyword 参数")
+                matches = []
+                if os.path.isdir(a):
+                    for d in os.listdir(a):
+                        dp = os.path.join(a, d)
+                        if not os.path.isdir(dp):
+                            continue
+                        for fn in ["00_task_state.json", "01_research.md", "02_design.md", "03_work_order.md", "04_note.md", "progress.log"]:
+                            fp = os.path.join(dp, fn)
+                            if not os.path.isfile(fp):
+                                continue
+                            with open(fp, "r", encoding="utf-8") as f:
+                                txt = f.read()
+                            idx = txt.lower().find(keyword.lower())
+                            if idx >= 0:
+                                start = max(0, idx - 40)
+                                end = min(len(txt), idx + len(keyword) + 80)
+                                matches.append({"slug": d, "file": fn,
+                                                "snippet": txt[start:end].replace("\n", " ")})
+                            if len(matches) >= 30:
+                                break
+                        if len(matches) >= 30:
+                            break
+                return json.dumps({"ok": True, "matches": matches, "keyword": keyword}, ensure_ascii=False)
+
+            return err(f"未知 action: {action}")
+        except Exception as e:
+            return err(str(e))
