@@ -421,11 +421,18 @@ async function loadCurrent(){
 }
 
 function loadFiles(){
-  const files=['03_work_order.md','02_design.md','01_research.md','04_note.md','00_task_state.json','progress.log'];
+  const files=[
+    {name:'03_work_order.md',label:'工单',hint:'自动生成'},
+    {name:'02_design.md',label:'设计',hint:'记录架构决策'},
+    {name:'01_research.md',label:'调研',hint:'记录技术对比'},
+    {name:'04_note.md',label:'备忘',hint:'记录关键发现'},
+    {name:'00_task_state.json',label:'状态',hint:'任务数据'},
+    {name:'progress.log',label:'日志',hint:'时间线'}
+  ];
   const fi=document.getElementById('file-nav-items');
   let fl='';
   files.forEach(f=>{
-    fl+='<div class="file-nav-item" onclick="selectFile(\''+esc(f)+'\')">'+esc(f)+'</div>';
+    fl+='<div class="file-nav-item" onclick="selectFile(\''+esc(f.name)+'\')" title="'+esc(f.hint)+'">'+esc(f.label)+' <span style="color:var(--muted);font-size:10px">'+esc(f.name)+'</span></div>';
   });
   fi.innerHTML=fl;
   setTimeout(()=>selectFile('03_work_order.md'),100);
@@ -434,7 +441,7 @@ function loadFiles(){
 async function selectFile(name){
   document.querySelectorAll('.file-nav-item').forEach(el=>el.classList.remove('active'));
   const items=document.querySelectorAll('.file-nav-item');
-  items.forEach(el=>{if(el.textContent.trim()===name)el.classList.add('active')});
+  items.forEach(el=>{if(el.textContent.trim().includes(name))el.classList.add('active')});
   document.getElementById('preview-title').textContent=name;
   let content='(加载中...)';
   try{
@@ -442,7 +449,19 @@ async function selectFile(name){
     const p=slug?'/archive/'+slug+'/file/'+encodeURIComponent(name):'/current/file/'+encodeURIComponent(name);
     content=await getText(p);
   }catch(e){content='(无法加载)'}
-  const pb=document.getElementById('preview-body');pb.textContent=content.slice(0,5000);pb.classList.add('fade');setTimeout(()=>pb.classList.remove('fade'),250);
+  
+  // 检测空文件并提示
+  const isNoteFile=['01_research.md','02_design.md','04_note.md'].includes(name);
+  let hint='';
+  if(isNoteFile&&content){
+    const lines=content.split('\n').filter(l=>l.trim()&&!l.trim().startsWith('>')&&!l.trim().startsWith('#'));
+    if(lines.length<=2){
+      const labels={'01_research.md':'调研','02_design.md':'设计','04_note.md':'备忘'};
+      hint='\n\n【提示】此 '+labels[name]+' 文件尚未记录实质内容。请在对应阶段使用 safe_edit 编辑此文件，记录关键结论。';
+    }
+  }
+  
+  const pb=document.getElementById('preview-body');pb.textContent=content.slice(0,5000)+hint;pb.classList.add('fade');setTimeout(()=>pb.classList.remove('fade'),250);
 }
 
 async function loadArchives(){

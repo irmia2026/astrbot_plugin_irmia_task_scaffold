@@ -7,13 +7,13 @@
 | 功能 | 说明 |
 |------|------|
 | `task_list` 工具 | 全量覆写任务状态（start/update/complete/status），持久化到 `00_task_state.json` |
-| 工作空间脚手架 | 首次调用自动生成 01_research.md / 02_design.md / 03_work_order.md / progress.log |
+| 工作空间脚手架 | 首次调用自动生成方法论文件：`01_research.md`（调研）/ `02_design.md`（设计）/ `04_note.md`（备忘）/ `03_work_order.md`（工单）/ `progress.log`（日志） |
+| 方法论文件引导 | 模板自带"使用时机"提示；Plan 模式提醒先读已有记录；Build 模式提醒及时写入 |
 | 自动进度追踪 | `on_llm_tool_respond` 钩子自动逐项完成 todo + 提取 CWD |
 | 自动归档 | 全部完成 → 自动移动到 `archive/<slug>/` |
 | `task_archive` 工具 | list/read/search 已归档任务，LLM 按需召回历史 |
 | Plan/Build 双模式 | Plan 模式全局屏蔽写工具（`on_llm_request` 过滤 function list），Build 恢复 |
-| WebUI 仪表盘 | 三栏布局：当前长任务/实时活动流/文件浏览器/归档面板 + Plan/Build 滑动胶囊 |
-| 系统托盘 | pystray 托盘图标，颜色区分模式，悬停显示进度，右键快捷操作 |
+| WebUI 仪表盘 | 三栏布局：当前长任务/实时活动流/文件浏览器（含用途标签+空文件提示）/归档面板 + Plan/Build 滑动胶囊 |
 | `summary` 字段 | 自然语言进度描述 + 下一步提示 |
 
 ## 安装
@@ -32,9 +32,10 @@ git clone https://github.com/irmia2026/irmia_task_scaffold.git plugins/astrbot_p
 {home}/.astrbot/data/task_scaffolds/
 ├── current/                       ← 当前活跃工作空间
 │   ├── 00_task_state.json         ← 任务进度 + 元数据（每次覆写）
-│   ├── 01_research.md             ← 调研笔记（LLM 自主填充）
-│   ├── 02_design.md               ← 设计文档（LLM 自主填充）
+│   ├── 01_research.md             ← 调研笔记（LLM 主动填充：参考来源、技术对比、选型决策）
+│   ├── 02_design.md               ← 设计文档（LLM 主动填充：架构决策、接口定义、数据流）
 │   ├── 03_work_order.md           ← 自动生成的工单骨架
+│   ├── 04_note.md                 ← 备忘（LLM 主动填充：关键发现、bug根因、workaround）
 │   └── progress.log               ← ISO 时间戳事件日志
 ├── archive/
 │   └── 2026-05-31_REV-008/        ← 已完成工作空间归档
@@ -82,7 +83,7 @@ task_archive(action="read", slug="2026-05-31_REV-008", file="03_work_order.md")
 | Plan | `on_llm_request` 从 function list 中摘除写工具，LLM 看不到写工具。system_prompt 提示用户切换 |
 | Build | 全部工具可用 |
 
-WebUI 任务面板右下角滑动胶囊切换，或右键系统托盘图标。
+WebUI 任务面板右下角滑动胶囊切换。
 
 ## WebUI
 
@@ -98,4 +99,4 @@ WebUI 任务面板右下角滑动胶囊切换，或右键系统托盘图标。
 
 纯标准库（`json` + `os` + `shutil` + `datetime` + `threading` + `tkinter`）。
 
-可选：`pystray` + `Pillow`（托盘图标）、`quart`（AstrBot 自带）。
+可选：`quart`（AstrBot 自带）。

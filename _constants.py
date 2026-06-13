@@ -42,19 +42,67 @@ _WRITE_KEYWORDS = [
 _ALWAYS_WRITE = {"astrbot_execute_shell", "astrbot_execute_python"}
 _EXEMPT_TOOLS = {"task_list", "task_archive"}
 
-_RT = "# 调研\n\n*（在此记录参考来源、竞品分析、技术决策依据）*\n\n## 参考来源\n- \n\n## 技术对比\n- \n\n## 决策记录\n- \n"
-_DT = "# 设计\n\n*（在此记录架构决策、接口定义、数据流图）*\n\n## 架构决策\n- \n\n## 接口定义\n- \n\n## 数据流\n- \n"
-_NT = "# 备忘\n\n*（在此记录易被截断上下文遗忘的高价值信息、探索成果、关键发现）*\n\n"
+_RT = """# 调研笔记
+
+> 使用时机：当子任务涉及"调研技术方案、对比选型、查阅文档"时，将关键结论记录在此。
+> 记录方式：使用 safe_edit 或 file_write 直接编辑此文件。
+
+## 参考来源
+- 
+
+## 技术对比
+- 
+
+## 决策记录
+- 
+"""
+
+_DT = """# 设计文档
+
+> 使用时机：当子任务涉及"架构设计、接口定义、数据流规划"时，将设计决策记录在此。
+> 记录方式：使用 safe_edit 或 file_write 直接编辑此文件。
+
+## 架构决策
+- 
+
+## 接口定义
+- 
+
+## 数据流
+- 
+"""
+
+_NT = """# 备忘
+
+> 使用时机：当发现"关键 bug 根因、重要 workaround、易遗忘的配置细节"时，立即记录在此。
+> 记录方式：使用 safe_edit 或 file_write 直接编辑此文件。
+> 价值：这些信息在上下文被截断后极易丢失，写入文件可永久保留。
+
+## 关键发现
+- 
+
+## 避坑记录
+- 
+
+## 临时配置
+- 
+"""
 
 _TASK_LIST_DESC = (
     "长任务进度追踪。仅在需要多步执行、多文件修改或预计持续多轮的复杂任务时调用。"
     "日常闲聊、简单问答、单文件小改、代码解释、文档查询切勿调用。"
     "一旦进入长任务模式(start成功)，之后所有子任务进度都用update更新，绝不再调start。"
-    "工作区有04_note.md，可记录易被截断上下文遗忘的高价值信息与探索成果。"
-    "示例——应当追踪: 实现新功能、修复复杂Bug、大规模重构、多文件审查、跨模块改动。"
+    "\n\n【工作区文件使用指南】"
+    "\n- 01_research.md: 调研阶段使用。记录参考来源、技术对比、选型决策。"
+    "\n- 02_design.md: 设计阶段使用。记录架构决策、接口定义、数据流。"
+    "\n- 04_note.md: 任何阶段使用。记录关键发现、bug根因、workaround、易遗忘信息。"
+    "\n- 03_work_order.md: 自动生成，无需编辑。"
+    "\n使用方式：在对应阶段，用 safe_edit/file_write 直接编辑这些文件。"
+    "这些信息在上下文被截断后极易丢失，写入文件可永久保留，供后续轮次召回。"
+    "\n\n示例——应当追踪: 实现新功能、修复复杂Bug、大规模重构、多文件审查、跨模块改动。"
     "不追踪: 解释概念、小改一行、查API用法、聊天问候。"
     "start时必须提供简短概括性标题(title)，禁止用第一个子任务内容当标题。"
-    "action: start/create/update/complete/status/load_template/list_templates/checkpoint/rollback/list_checkpoints"
+    "action: start/update/complete/status/load_template/list_templates/checkpoint/rollback/list_checkpoints"
 )
 
 _TASK_LIST_PARAMS = {

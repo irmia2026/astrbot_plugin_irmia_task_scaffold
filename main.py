@@ -177,16 +177,42 @@ class Main(star.Star):
             if not _constants._AGENT_NAME:
                 _constants._AGENT_NAME = "Agent"
         mode = get_mode()
+        
+        # 检查工作区方法论文件状态，用于提醒
+        ws_hint = ""
+        if is_active():
+            try:
+                cr = cur()
+                empty_files = []
+                for fn, label in [("01_research.md", "调研"), ("02_design.md", "设计"), ("04_note.md", "备忘")]:
+                    fp = os.path.join(cr, fn)
+                    if os.path.isfile(fp):
+                        with open(fp, "r", encoding="utf-8") as f:
+                            content = f.read().strip()
+                        # 检查是否还是空模板（只有标题和提示，没有实质内容）
+                        lines = [l.strip() for l in content.split("\n") if l.strip() and not l.strip().startswith(">")]
+                        if len(lines) <= 3:  # 只有标题 + 1-2 个空列表项
+                            empty_files.append(label)
+                if empty_files:
+                    ws_hint = f"\n【工作区提醒】{', '.join(empty_files)}文件尚未记录内容。"
+            except Exception:
+                pass
+        
         if mode != "plan":
             parts = getattr(request, 'extra_user_content_parts', None)
             if parts is not None:
                 try:
-                    part = TextPart(text="\n[Build 模式] 所有工具可用。若已有活跃长任务，使用 update 更新进度，切勿重复 start。")
+                    hint = "\n[Build 模式] 所有工具可用。若已有活跃长任务，使用 update 更新进度，切勿重复 start。"
+                    if ws_hint:
+                        hint += ws_hint + "请在执行调研/设计/发现关键信息时，及时用 safe_edit 编辑 01_research.md / 02_design.md / 04_note.md 记录结论。"
+                    part = TextPart(text=hint)
                     part.mark_as_temp()
                     parts.append(part)
                 except Exception:
                     pass
             return
+        
+        # Plan 模式：提醒先读工作区文件
         funcs = getattr(request, 'functions', None) or getattr(request, 'tools', None) or getattr(request, 'func_tool', None)
         removed = []
         if funcs:
@@ -219,10 +245,18 @@ class Main(star.Star):
         parts = getattr(request, 'extra_user_content_parts', None)
         if parts is not None:
             try:
-                part = TextPart(text=(
+                plan_hint = (
                     "\n[Plan 模式] 写操作与命令执行类工具已禁用，只能阅读和分析。"
                     "如需写入请告知用户切换到 Build。"
-                ))
+                )
+                if is_active():
+                    plan_hint += (
+                        "\n当前有活跃长任务，建议先读取 01_research.md / 02_design.md / 04_note.md "
+                        "了解已记录的调研结论和设计决策，避免重复工作。"
+                    )
+                if ws_hint:
+                    plan_hint += ws_hint
+                part = TextPart(text=plan_hint)
                 part.mark_as_temp()
                 parts.append(part)
             except Exception:

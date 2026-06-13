@@ -4,8 +4,7 @@
 
 ```
 astrbot_plugin_irmia_task_scaffold/
-├── main.py                  # 插件入口 + 工具类 + HTTP 路由 + filter 钩子
-├── tray.py                  # pystray 系统托盘（独立线程）
+├── main.py                  # 插件入口 + Filter 钩子 + 模式管理 + 方法论文件提醒
 ├── metadata.yaml            # AstrBot 插件元数据
 ├── templates/
 │   └── dashboard.html       # WebUI 仪表盘（单文件 HTML/CSS/JS，零前端框架）
@@ -18,9 +17,10 @@ astrbot_plugin_irmia_task_scaffold/
 LLM 调用 task_list
        ↓
 TaskListTool.call() ──→ 00_task_state.json (current/)
-                      → 01_research.md (模板)
-                      → 02_design.md (模板)
+                      → 01_research.md (模板，带"使用时机"引导)
+                      → 02_design.md (模板，带"使用时机"引导)
                       → 03_work_order.md (ASCII 工单)
+                      → 04_note.md (模板，带"使用时机"引导)
                       → progress.log (追加)
        ↓
 WebUI poll (3s) ←─ GET /api/plug/task_scaffold/api/current
@@ -75,26 +75,30 @@ class TaskArchiveTool(_FT):
 ### Plan/Build 模式
 
 ```
-WebUI toggle → POST /api/mode → _set_mode() + _switch_to_plan/build()
+WebUI toggle → POST /api/mode → _set_mode()
                                               ↓
-                              ctx.deactivate_llm_tool(name) / activate_llm_tool(name)
+                              写入 mode.json
                                               ↓
-                              FunctionTool.active = False/True（内核级）
-                                              ↓
-下次 LLM 请求 → ToolSet 构建时自动跳过 active=False 的工具
-              → _on_decorating_result 注入提示（告知用户当前模式）
+下次 LLM 请求 → register_on_llm_request()
+              → 读取 mode.json
+              → plan: 从 request.functions 摘除写工具
+              → build: 保留全部工具
+              → 注入 user_prompt 提示（含工作区文件状态）
 ```
 
-**核心机制**：使用 AstrBot 内核 API `context.deactivate_llm_tool(name)` / `context.activate_llm_tool(name)`，
-直接设置 `FunctionTool.active` 标志。LLM 工具 schema 构建时（`get_func_desc_*_style()`）自动过滤 `active=False` 的工具，
-LLM 不可见也不可调用，彻底杜绝漏网。
+**核心机制**：`on_llm_request` 中直接修改 `request.functions` 列表，
+通过工具描述关键词匹配（`write`, `edit`, `patch`, `save` 等 40+ 关键词）摘除写工具。
 
-**模式同步**：`_reconcile_mode(ctx)` 在每次 LLM 请求前检查 mode.json 是否与已应用模式一致。
-若不一致（如系统托盘切换了 mode.json），自动同步工具激活状态。
+**模式提醒**：每次 LLM 请求时，自动检测工作区方法论文件（01_research/02_design/04_note）是否为空，
+在 user_prompt 中注入针对性提醒：
+- Plan 模式："建议先读取 01_research.md / 02_design.md 了解已有结论"
+- Build 模式："请及时用 safe_edit 编辑方法论文件记录关键结论"
 
-**禁用清单**（`_PLAN_DISABLED_TOOLS`）：
-- devkit: `safe_edit`, `file_patch`, `file_write`, `file_remove`, `git_commit`, `git_push`, `safe_rollback`, `file_zip`, `file_unzip`
-- AstrBot builtin: `future_task`
+**禁用清单**（关键词匹配）：
+- 英文：`write`, `edit`, `patch`, `save`, `modify`, `create`, `delete`, `execute`, `run`, `commit`, `push`, `deploy`...
+- 中文：`写入`, `编辑`, `修改`, `创建`, `删除`, `执行`, `运行`, `提交`, `推送`...
+- 强制禁用：`astrbot_execute_shell`, `astrbot_execute_python`
+- 豁免：`task_list`, `task_archive`
 
 ### HTTP 路由
 
@@ -119,7 +123,7 @@ AstrBot 自动添加 `/api/plug/` 前缀。
 | `@filter.on_llm_response()` | 活动日志（记录 LLM 回复） |
 | `@filter.on_agent_done()` | 活动日志（记录待命状态） |
 | `@filter.on_llm_tool_respond()` | **自动进度**：完成当前 todo + 提取 CWD + 自动归档 |
-| `@register_on_llm_request()` | **模式同步**：每次请求前调用 `_reconcile_mode` 确保工具激活状态与 mode.json 一致 |
+| `@register_on_llm_request()` | **模式同步+文件提醒**：检测 mode.json + 检查工作区方法论文件空状态 + 注入针对性提示 |
 
 ### WebUI (dashboard.html)
 
@@ -128,24 +132,17 @@ AstrBot 自动添加 `/api/plug/` 前缀。
 ```
 ┌─ 左栏 ────┬─ 中栏 ─────────────────┬─ 右栏 ────┐
 │ 长任务     │ 🟢 当前工作目录: D:/...│ 工作区文件 │
-│ 当前长任务 │ ┌─ 当前长任务 ────────┐│ 03_work.. │
-│ 归档       │ │ hero + 进度圈       ││ 02_design │
-│            │ │ todos 列表          ││ 01_res..  │
-│ 归档分类   │ │         [Plan|Build]││ progress  │
-│ 全部       │ └────────────────────┘│           │
-│ devkit     │ ┌─ 实时活动 ─────────┐│ 文件预览  │
+│ 当前长任务 │ ┌─ 当前长任务 ────────┐│ 工单      │
+│ 归档       │ │ hero + 进度圈       ││ 设计      │
+│            │ │ todos 列表          ││ 调研      │
+│ 归档分类   │ │         [Plan|Build]││ 备忘      │
+│ 全部       │ └────────────────────┘│ 状态      │
+│ devkit     │ ┌─ 实时活动 ─────────┐│ 日志      │
 │            │ │ ...                ││           │
-│ 🟢 在线    │ └────────────────────┘│           │
+│ 🟢 在线    │ └────────────────────┘│ 文件预览  │
 └───────────┴───────────────────────┴───────────┘
 ```
 
-### 系统托盘 (tray.py)
-
-- pystray 32px 实心圆图标（Pillow 绘制）
-- 颜色：plan=蓝 / build=绿 / 空闲=灰
-- 2 秒轮询 `mode.json` + `00_task_state.json`
-- 悬停 tooltip：`Build · 3/7 · safe_edit`
-- 右键菜单：切换 Plan/Build / 打开仪表板 / 退出
 
 ## 数据文件
 
@@ -185,4 +182,3 @@ AstrBot 自动添加 `/api/plug/` 前缀。
 | 当前任务面板 | 3s | fetch `/api/current` + JSON 缓存比对 |
 | 实时活动流 | 3s | fetch `/api/activity` + 增量追加 + 去重 |
 | Plan/Build 模式 | 3s | fetch `/api/mode` |
-| 系统托盘 | 2s | 读文件 |
