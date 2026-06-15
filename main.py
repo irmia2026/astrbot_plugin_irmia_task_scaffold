@@ -222,11 +222,30 @@ class Main(star.Star):
                 if name in _constants._EXEMPT_TOOLS:
                     keep.append(f)
                     continue
-                desc = getattr(f, 'description', '') or (f.get('description', '') if isinstance(f, dict) else '')
-                if name in _constants._ALWAYS_WRITE or any(kw in (desc.lower() if desc else '') for kw in _constants._WRITE_KEYWORDS):
+                # 3. 读工具名称安全词 — 工具名被拆分为单词后，任一单词是安全词则视为只读
+                #    覆盖: read_file / file_read / readFile / safe_read_cache / code-search
+                #    但如果同时包含写词（如 get_permission_and_write），以写词为准
+                name_words = {w.lower() for w in _constants._NAME_SPLIT_RE.split(name) if len(w) > 1}
+                has_safe = bool(name_words & _constants._SAFE_READ_WORDS)
+                has_write = bool(name_words & _constants._WRITE_TOOL_WORDS)
+                if has_write:
                     removed.append(name)
-                else:
+                    continue
+                if has_safe:
                     keep.append(f)
+                    continue
+                desc = getattr(f, 'description', '') or (f.get('description', '') if isinstance(f, dict) else '') or ''
+                # 4. 中文描述：子串匹配关键词（中文不适合单词边界）
+                if any('\u4e00' <= c <= '\u9fff' for c in desc):
+                    if any(kw in desc.lower() for kw in _constants._WRITE_KEYWORDS if not kw.isascii()):
+                        removed.append(name)
+                        continue
+                # 5. 英文描述：正则单词边界匹配（防止 "run" 误伤 "runtime"）
+                if _constants._EN_WRITE_RE.search(desc):
+                    removed.append(name)
+                    continue
+                # 6. 以上都不命中 → 保留
+                keep.append(f)
             if removed:
                 try:
                     if hasattr(request, 'functions'):

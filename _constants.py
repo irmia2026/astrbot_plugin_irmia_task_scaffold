@@ -21,24 +21,72 @@ def apply_config_extras():
     if limit > 0:
         _CONTEXT_LIMIT = limit
     for kw in extra_kw:
-        if kw not in _WRITE_KEYWORDS:
+        if kw and kw.strip() and kw not in _WRITE_KEYWORDS:
             _WRITE_KEYWORDS.append(kw)
+    # 如果有新加英文词，也更新正则
+    new_en = [kw for kw in extra_kw if kw and kw.strip() and kw.isascii() and kw not in (
+        "write", "edit", "patch", "modify", "delete",
+        "commit", "push", "deploy",
+        "upload", "publish", "release", "merge",
+        "install", "uninstall", "rollback", "unzip",
+    )]
+    if new_en:
+        global _EN_WRITE_RE
+        _EN_WRITE_RE = re.compile(
+            r'\b(?:write|edit|patch|modify|delete|commit|push|deploy|'
+            r'upload|publish|release|merge|install|uninstall|rollback|unzip'
+            + '|' + '|'.join(re.escape(w) for w in new_en) + r')\b',
+            re.IGNORECASE
+        )
     for t in extra_ex:
         if t not in _EXEMPT_TOOLS:
             _EXEMPT_TOOLS.add(t)
 _LAST_CTX_SIZE = 0
 
 _WRITE_KEYWORDS = [
-    "write", "edit", "patch", "save", "modify", "create",
-    "delete", "remove", "execute", "run", "send",
-    "commit", "push", "deploy", "start",
-    "stop", "restart", "schedule", "upload", "publish",
-    "release", "merge", "install", "uninstall",
-    "rollback", "unzip",
+    # 强写入信号（保留）
+    "write", "edit", "patch", "modify", "delete",
+    "commit", "push", "deploy",
+    "upload", "publish", "release", "merge",
+    "install", "uninstall", "rollback", "unzip",
+    # 中文写入关键词
     "部署", "安装", "删除", "写入", "创建", "修改", "编辑",
     "执行", "运行", "下载", "上传", "提交", "推送", "发布",
     "合并", "卸载", "回滚", "解压", "压缩", "重启",
 ]
+
+# 正则匹配（单词边界），用于 main.py 过滤
+# 仅匹配英文关键词以避免子串误伤（如 "run" 匹配 "runtime"）
+import re
+_EN_WRITE_RE = re.compile(
+    r'\b(?:' + '|'.join([
+        "write", "edit", "patch", "modify", "delete",
+        "commit", "push", "deploy",
+        "upload", "publish", "release", "merge",
+        "install", "uninstall", "rollback", "unzip",
+    ]) + r')\b',
+    re.IGNORECASE
+)
+
+# 写工具名称关键词 — 如果工具名包含这些词，即使同时有安全词，也视为写工具
+_WRITE_TOOL_WORDS = {
+    "write", "edit", "patch", "delete", "modify", "upload",
+    "commit", "push", "deploy", "install", "uninstall",
+    "rollback", "unzip", "remove", "create", "save",
+}
+
+# 读工具名称安全词 — 工具名任意位置包含这些词（作为独立单词）视为只读
+# 支持前缀 (read_file)、后缀 (file_read)、中缀 (safe_read_cache)、驼峰 (readFile)
+_SAFE_READ_WORDS = {
+    "read", "search", "list", "get", "query", "find",
+    "show", "browse", "preview", "check", "fetch",
+    "dump", "cat", "echo", "lookup", "print", "stat",
+    "describe", "explain", "inspect", "peek", "view",
+    "glob", "grep", "ls", "walk", "scan", "trace",
+}
+
+# 用于将工具名拆分为单词的正则
+_NAME_SPLIT_RE = re.compile(r'[_-]+|\.|(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])')
 _ALWAYS_WRITE = {"astrbot_execute_shell", "astrbot_execute_python"}
 _EXEMPT_TOOLS = {"task_list", "task_archive"}
 

@@ -120,6 +120,71 @@ def test_templates_content():
     assert "safe_edit" in _NT
     print("  template content OK")
 
+def test_plan_filter():
+    from astrbot_plugin_irmia_task_scaffold._constants import (
+        _EN_WRITE_RE, _SAFE_READ_WORDS, _NAME_SPLIT_RE, _WRITE_KEYWORDS, _WRITE_TOOL_WORDS
+    )
+    # 读工具不应被正则误伤
+    safe_descs = [
+        "Read a file from the filesystem",
+        "Search the codebase for a pattern",
+        "List all files in a directory",
+        "Get the current weather",
+        "Query the database",
+        "Check if a package is installed",
+        "Browse the web for information",
+        "Fetch the latest news",
+        "Look up a word definition",
+        "This tool returns runtime information",
+        "Get started with the tutorial",
+        "Startup configuration check",
+        "Sends a query to the API",
+    ]
+    for d in safe_descs:
+        assert not _EN_WRITE_RE.search(d), f"regex falsely blocked: '{d}'"
+
+    # 写工具应被正则捕获
+    write_descs = [
+        "Edit a file in place",
+        "Write content to a file",
+        "Delete a file permanently",
+        "Modify the configuration",
+        "Upload a file to server",
+        "Install a new package",
+        "Commit changes to git",
+    ]
+    for d in write_descs:
+        assert _EN_WRITE_RE.search(d), f"regex missed write tool: '{d}'"
+
+    # 工具名安全词拆分测试
+    safe_names = [
+        "read_file", "file_read", "search_code", "code-search",
+        "readFile", "safeReadCache", "ReadCodeSearch", "dir_list",
+        "ls_dir", "check_status",
+    ]
+    for name in safe_names:
+        words = {w.lower() for w in _NAME_SPLIT_RE.split(name) if len(w) > 1}
+        assert words & _SAFE_READ_WORDS, f"'{name}' should be safe"
+
+    # 邪门工具名不应被误认为安全
+    unsafe_names = [
+        "write_file", "edit_code", "patch_dir", "deleteAll", "uploadFile",
+    ]
+    for name in unsafe_names:
+        words = {w.lower() for w in _NAME_SPLIT_RE.split(name) if len(w) > 1}
+        assert not (words & _SAFE_READ_WORDS), f"'{name}' should NOT be safe"
+
+    # 写词优先于安全词
+    mixed = "get_permission_and_write"
+    words = {w.lower() for w in _NAME_SPLIT_RE.split(mixed) if len(w) > 1}
+    assert (words & _WRITE_TOOL_WORDS), f"'{mixed}' should be blocked due to write word"
+
+    # 高频误报词已移除
+    for bad in ["run", "start", "send", "save", "create", "remove", "execute", "stop", "restart", "schedule"]:
+        assert bad not in _WRITE_KEYWORDS, f"'{bad}' should not be in _WRITE_KEYWORDS"
+
+    print("  plan filter OK")
+
 if __name__ == "__main__":
     print("=== Running unit tests ===\n")
     test_constants()
@@ -131,5 +196,6 @@ if __name__ == "__main__":
     test_activity_trim()
     test_templates()
     test_templates_content()
+    test_plan_filter()
     test_mode()
     print("\n=== All tests passed ===")
