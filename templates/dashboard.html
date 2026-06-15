@@ -610,7 +610,7 @@ async function toggleMode(){
 setInterval(()=>{
   document.getElementById('nav-time').textContent=' · '+ts();
   if(typeof E==='undefined'||API!=='__EMBEDDED__'){loadCurrent();loadActivity();loadMode();loadStats();loadStatus();checkOnline();}
-},3000);
+},1000);
 
 loadCurrent();
 loadArchives();
