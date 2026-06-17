@@ -40,6 +40,9 @@ def _read_ws_files():
 class Main(star.Star):
     def __init__(self, context, config=None):
         super().__init__(context)
+        if config and isinstance(config, dict) and config.get("data_root"):
+            from . import _paths
+            _paths.set_root(config["data_root"])
         _constants.apply_config_extras()
         tl = TaskListTool()
         ta = TaskArchiveTool()
@@ -108,14 +111,15 @@ class Main(star.Star):
         if name in ("task_list", "task_archive"):
             logger.debug(f"[_on_tool_done] skip exempt tool {name}")
             return
-        # 仅对成功的工具响应推进任务进度
+        # 仅对明确成功的工具响应推进任务进度
         failed = False
         fail_reason = ""
         if tool_result is None:
-            failed = False
+            failed = True
+            fail_reason = "result is None (no explicit success)"
         elif isinstance(tool_result, Exception):
             failed = True
-            fail_reason = "result is Exception"
+            fail_reason = f"result is Exception: {tool_result}"
         elif isinstance(tool_result, dict):
             failed = not tool_result.get("ok", True)
             if failed:
@@ -134,16 +138,14 @@ class Main(star.Star):
         cr = cur()
         sp = os.path.join(cr, "00_task_state.json")
         try:
-            with open(sp, "r", encoding="utf-8") as f:
-                state = json.load(f)
-            tds = state.get("todos", [])
-            if not tds:
-                logger.debug("[_on_tool_done] no todos, skip")
-                return
+            state = await asyncio.to_thread(lambda: json.load(open(sp, "r", encoding="utf-8")))
         except Exception as e:
             logger.warning(f"[_on_tool_done] read state failed: {e}")
             return
-
+        tds = state.get("todos", [])
+        if not tds:
+            logger.debug("[_on_tool_done] no todos, skip")
+            return
         logger.debug(f"[_on_tool_done] before advance: {[t.get('status') for t in tds]}")
         cwd = ""
         if isinstance(tool_args, dict):
@@ -177,8 +179,7 @@ class Main(star.Star):
         state["todos"] = tds
         state["updated_at"] = datetime.now().isoformat(timespec="seconds")
         try:
-            with open(sp, "w", encoding="utf-8") as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
+            await asyncio.to_thread(lambda: json.dump(state, open(sp, "w", encoding="utf-8"), ensure_ascii=False, indent=2))
         except Exception as e:
             logger.error(f"[_on_tool_done] write state failed: {e}")
             return
@@ -187,8 +188,7 @@ class Main(star.Star):
         if updated:
             now = datetime.now().isoformat(timespec="seconds")
             try:
-                with open(os.path.join(cr, "progress.log"), "a", encoding="utf-8") as f:
-                    f.write(f"[{now}] auto-advance via {name}\n")
+                await asyncio.to_thread(lambda: open(os.path.join(cr, "progress.log"), "a", encoding="utf-8").write(f"[{now}] auto-advance via {name}\n"))
             except Exception:
                 pass
 
@@ -196,7 +196,7 @@ class Main(star.Star):
         logger.info(f"[_on_tool_done] done={done} for {name}")
         if done:
             try:
-                do_archive()
+                await asyncio.to_thread(do_archive)
                 await log_activity(_constants._AGENT_NAME, "任务完成", f"全部 {len(tds)} 项任务完成，已自动归档", tool=name)
                 logger.info(f"[_on_tool_done] archived {len(tds)} tasks")
             except Exception as e:
@@ -291,12 +291,7 @@ class Main(star.Star):
                         request.functions = keep
                     if hasattr(request, 'tools'):
                         request.tools = keep
-                    if hasattr(request, 'func_tool') and hasattr(request.func_tool, 'remove_tool'):
-                        for name in removed:
-                            try:
-                                request.func_tool.remove_tool(name)
-                            except Exception:
-                                pass
+                    # 不再调用 func_tool.remove_tool，避免全局卸载工具后 Build 模式无法恢复
                 except Exception:
                     pass
                 logger.info(f"plan 模式屏蔽 {len(removed)} 个写工具: {removed[:8]}{'...' if len(removed)>8 else ''}")

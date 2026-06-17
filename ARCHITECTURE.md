@@ -95,7 +95,7 @@ WebUI toggle → POST /api/mode → _set_mode()
 - Build 模式："请及时用 safe_edit 编辑方法论文件记录关键结论"
 
 **禁用清单**（关键词匹配 + 工具名安全词）：
-- 英文关键词（按单词边界匹配）：`write`, `edit`, `patch`, `modify`, `delete`, `commit`, `push`, `deploy`, `upload`, `publish`, `release`, `merge`, `install`, `uninstall`, `rollback`, `unzip`
+- 英文关键词（按单词边界匹配）：`write`, `edit`, `patch`, `modify`, `delete`, `commit`, `push`, `deploy`, `upload`, `publish`, `release`, `merge`, `install`, `uninstall`, `rollback`, `unzip`, `remove`, `create`, `save`
 - 中文关键词（子串匹配）：`部署`, `安装`, `删除`, `写入`, `创建`, `修改`, `编辑`, `执行`, `运行`, `下载`, `上传`, `提交`, `推送`, `发布`, `合并`, `卸载`, `回滚`, `解压`, `压缩`, `重启`
 - 工具名安全词（保留读工具）：`read`, `search`, `list`, `get`, `query`, `find`, `show`, `browse`, `preview`, `check`, `fetch`, `dump`, `cat`, `echo`, `lookup`, `print`, `stat`, `describe`, `explain`, `inspect`, `peek`, `view`, `glob`, `grep`, `ls`, `walk`, `scan`, `trace`
 - 强制禁用：`astrbot_execute_shell`, `astrbot_execute_python`

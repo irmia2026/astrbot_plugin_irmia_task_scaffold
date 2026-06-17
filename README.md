@@ -13,7 +13,7 @@
 | 自动归档 | 全部完成 → 自动移动到 `archive/<slug>/` |
 | `task_archive` 工具 | list/read/search 已归档任务，LLM 按需召回历史 |
 | Plan/Build 双模式 | Plan 模式全局屏蔽写工具（`on_llm_request` 过滤 function list），Build 恢复 |
-| WebUI 仪表盘 | 三栏布局：当前长任务/实时活动流/文件浏览器（含用途标签+空文件提示）/归档面板 + Plan/Build 滑动胶囊 |
+| WebUI 仪表盘 | 三栏布局：当前长任务/实时活动流/文件浏览器（含用途标签+空文件提示）/归档面板 + Plan/Build 滑动胶囊 + 年/月/周/日折叠 |
 | `summary` 字段 | 自然语言进度描述 + 下一步提示 |
 
 ## 安装
@@ -23,8 +23,6 @@
 ```bash
 git clone https://github.com/irmia2026/irmia_task_scaffold.git plugins/astrbot_plugin_irmia_task_scaffold
 ```
-
-可选依赖：`pystray` + `Pillow`（系统托盘功能，未安装时静默跳过）。
 
 ## 工作空间结构
 
@@ -93,7 +91,7 @@ WebUI 任务面板右下角滑动胶囊切换。
 - **中栏上**：当前工作目录横条 + 任务面板（进度圈 / todo 列表 / Plan-Build 胶囊）
 - **中栏下**：实时活动流（增量追加 + 去重 + 滑入动画）
 - **右栏**：工作区文件浏览器 + 文件内容预览
-- **归档面板**：按月分组 / 标签筛选 / 全文搜索 / 点击展开详情
+- **归档面板**：年/月/周/日折叠 / 标签筛选 / 全文搜索 / 分页加载 / 点击展开详情
 
 ## 依赖
 

@@ -1,9 +1,9 @@
 name: astrbot_plugin_irmia_task_scaffold
 display_name: 弥亚长任务系统
-desc: LLM Agent 方法论文本工作空间 — 状态机/脚手架/自动归档/WebUI仪表盘/Plan-Build双模式/系统托盘
+desc: LLM Agent 方法论文本工作空间 — 状态机/脚手架/自动归档/WebUI仪表盘/Plan-Build双模式
 author: 伊尔弥亚
 version: 0.5.0
 repo: https://github.com/irmia2026/irmia_task_scaffold
-short_desc: 长任务工作空间 — task_list/task_archive + WebUI + Plan/Build + 托盘
+short_desc: 长任务工作空间 — task_list/task_archive + WebUI + Plan/Build
 astrbot_version: ">=4.16"
 supports: [aiocqhttp, qq_official, telegram]

@@ -1,11 +1,29 @@
 # Changelog
 
+## v0.5.1 (Unreleased)
+
+### Added
+- **归档视图增强**：年/月/周/日折叠 + 分组展开/收起 + 分页加载 + 服务端搜索
+- **data_root 配置生效**：支持插件配置与环境变量覆盖数据根目录
+
+### Fixed
+- **系统托盘**：移除 README/CHANGELOG/metadata 中未兑现的系统托盘描述
+- **title 校验**：JSON Schema 与工具描述一致，`title` 改为可选，移除与首任务内容相同的无效校验
+- **工单排版**：中文字符显示宽度计算，避免 ASCII 边框错位
+- **Token 统计**：`month_total` 计入缓存 token，与 `session_total` 口径一致
+- **Plan 模式**：不再调用全局 `remove_tool`，仅修改本次请求副本，避免误杀读工具后无法恢复
+- **路径安全**：增加 slug/file/name 字符白名单，拦截 Windows 特殊字符与空字符串
+- **异步 IO**：Web API 热点路径与活动日志写入使用 `asyncio.to_thread`，避免阻塞事件循环
+- **轮询频率**：实时活动流改为 1s，与文档一致
+
+### Changed
+- **过滤词表文档**：ARCHITECTURE 禁用清单补充 `remove`/`create`/`save`
+
 ## v0.5.0 (2026-06-02)
 
 ### Added
 - **Plan/Build 双模式**：`on_llm_request` 全局过滤写工具 + user_prompt 提示 + 滑动胶囊切换
 - **自动进度追踪**：`on_llm_tool_respond` 钩子逐项完成 todo + 提取 CWD
-- **系统托盘**：pystray 动态图标（颜色区分模式）+ 右键快捷操作
 - **cwd 横条**：任务面板上方常驻显示当前工作目录
 - **归档详情**：点击归档项展开 todos 列表 + 文件链接预览
 - **WebUI 动效**：进度圈跳变 / todo 划入 / 骨架屏 shimmer / 活动流 slideIn
@@ -21,6 +39,7 @@
 - `_apply_mode` / `_get_tool_map` / `_TOOL_MAP_CACHE` / `_WRITE_TOOL_NAMES` — 被 `on_llm_request` 全局过滤替代
 - `event.stop_event()` — 无效，拦不住工具执行
 - `deactivate_llm_tool` — Web context 不可达
+- **系统托盘** — 原计划实现但未交付，避免文档过度承诺
 
 ## v0.4.0 (2026-06-01)
 

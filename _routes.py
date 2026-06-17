@@ -1,9 +1,9 @@
 """HTTP 路由注册。"""
-import json, os
+import json, os, asyncio
 from pathlib import Path
 
 from astrbot.api import logger
-from ._paths import root, cur, arc
+from ._paths import root, cur, arc, safe_name
 from ._mode import get_mode, set_mode
 from ._archive import get_stats as archive_stats
 from ._tokens import get_stats as token_stats
@@ -22,6 +22,8 @@ def _load_dashboard():
 def _safe_path(base, *parts):
     """严格的路径安全检查：返回 Path 或 None。"""
     try:
+        if any(not safe_name(p) for p in parts):
+            return None
         base = Path(base).resolve()
         target = base.joinpath(*parts).resolve()
         target.relative_to(base)
@@ -55,8 +57,11 @@ def register_routes(context):
                 _last_no_state_logged = True
             return jsonify({"active": False})
         _last_no_state_logged = False
-        with open(sp, "r", encoding="utf-8") as f:
-            st = json.load(f)
+        try:
+            st = await asyncio.to_thread(lambda: json.load(open(sp, "r", encoding="utf-8")))
+        except Exception as e:
+            logger.warning(f"[task_scaffold] api_current read failed: {e}")
+            return jsonify({"active": False})
         tds = st.get("todos", [])
         if not tds:
             return jsonify({"active": False})
@@ -68,32 +73,16 @@ def register_routes(context):
                         ).get(x, 99))})
 
     async def api_current_file(name):
+        if not safe_name(name):
+            return Response("invalid name", status=400)
         fp = _safe_path(cur(), name)
         if not fp or not fp.is_file():
             return Response("file not found", status=404)
-        content = fp.read_text(encoding="utf-8")
+        content = await asyncio.to_thread(fp.read_text, encoding="utf-8")
         return Response(content[:5000], content_type="text/plain; charset=utf-8")
 
-    async def api_archives():
-        from ._config import get as config_get
-        a = arc()
-        if not os.path.isdir(a):
-            return jsonify({"total": 0, "items": [], "has_more": False})
-
-        # 分页参数
-        try:
-            offset = max(0, int(qr.args.get("offset", 0)))
-            limit = max(1, min(100, int(qr.args.get("limit", config_get("archive_list_limit", 50)))))
-        except Exception:
-            offset = 0
-            limit = config_get("archive_list_limit", 50)
-
-        q = (qr.args.get("q", "") or "").strip().lower()
-
-        # 读取所有有效归档目录（按 slug 倒序）
+    def _build_archives(a, offset, limit, q):
         dirs = sorted([d for d in os.listdir(a) if os.path.isdir(os.path.join(a, d))], reverse=True)
-
-        # 搜索过滤
         if q:
             filtered = []
             for d in dirs:
@@ -115,7 +104,6 @@ def register_routes(context):
                 if q in text:
                     filtered.append(d)
             dirs = filtered
-
         total = len(dirs)
 
         def _item(d):
@@ -140,17 +128,39 @@ def register_routes(context):
                     "title": st.get("title", "") or (tds[0]["content"][:60] if tds else ""),
                     "summary": tds[0]["content"][:60] if tds else ""}
 
-        items = [_item(d) for d in dirs[offset:offset + limit]]
+        page_dirs = dirs[offset:offset + limit]
+        items = [_item(d) for d in page_dirs]
         items = [i for i in items if i]
+        return {"total": total, "items": items, "has_more": offset + len(items) < total}
 
-        return jsonify({"total": total, "items": items, "has_more": offset + len(items) < total})
+    async def api_archives():
+        from ._config import get as config_get
+        a = arc()
+        if not os.path.isdir(a):
+            return jsonify({"total": 0, "items": [], "has_more": False})
+
+        try:
+            offset = max(0, int(qr.args.get("offset", 0)))
+            limit = max(1, min(100, int(qr.args.get("limit", config_get("archive_list_limit", 50)))))
+        except Exception:
+            offset = 0
+            limit = config_get("archive_list_limit", 50)
+
+        q = (qr.args.get("q", "") or "").strip().lower()
+        result = await asyncio.to_thread(_build_archives, a, offset, limit, q)
+        return jsonify(result)
 
     async def api_archive_summary(slug):
+        if not safe_name(slug):
+            return jsonify({"ok": False, "error": "invalid slug"})
         fp = _safe_path(arc(), slug, "00_task_state.json")
         if not fp or not fp.is_file():
             return jsonify({"ok": False, "error": "not found"})
-        with open(fp, "r", encoding="utf-8") as f:
-            st = json.load(f)
+        try:
+            st = await asyncio.to_thread(lambda: json.load(open(fp, "r", encoding="utf-8")))
+        except Exception as e:
+            logger.warning(f"[task_scaffold] archive summary read failed: {e}")
+            return jsonify({"ok": False, "error": "read failed"})
         arc_dir = _safe_path(arc(), slug)
         actual = [n for n in os.listdir(arc_dir) if os.path.isfile(os.path.join(arc_dir, n))]
         st["files"] = sorted(actual, key=lambda x: (
@@ -159,26 +169,32 @@ def register_routes(context):
         return jsonify(st)
 
     async def api_archive_file(slug, name):
+        if not safe_name(slug) or not safe_name(name):
+            return Response("invalid name", status=400)
         fp = _safe_path(arc(), slug, name)
         if not fp or not fp.is_file():
             return Response("file not found", status=404)
-        content = fp.read_text(encoding="utf-8")
+        content = await asyncio.to_thread(fp.read_text, encoding="utf-8")
         return Response(content[:5000], content_type="text/plain; charset=utf-8")
 
     async def api_activity():
         fp = os.path.join(root(), "state", "activity.jsonl")
         if not os.path.isfile(fp):
             return jsonify([])
-        lines = []
-        with open(fp, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        lines.append(json.loads(line))
-                    except Exception:
-                        pass
-        return jsonify(lines[-20:])
+
+        def _read():
+            lines = []
+            with open(fp, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            lines.append(json.loads(line))
+                        except Exception:
+                            pass
+            return lines[-20:]
+
+        return jsonify(await asyncio.to_thread(_read))
 
     async def api_mode_get():
         return jsonify({"mode": get_mode()})

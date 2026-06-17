@@ -42,7 +42,7 @@ def get_stats():
                         try:
                             entry = json.loads(line)
                             if entry.get("ts", "") >= month_start.isoformat(timespec="seconds"):
-                                month_total += entry.get("i", 0) + entry.get("o", 0)
+                                month_total += entry.get("i", 0) + entry.get("c", 0) + entry.get("o", 0)
                         except Exception:
                             pass
         except Exception:

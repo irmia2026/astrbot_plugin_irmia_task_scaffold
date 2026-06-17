@@ -1,5 +1,5 @@
 """TaskListTool 与 TaskArchiveTool。"""
-import json, os
+import json, os, asyncio
 from dataclasses import dataclass, field
 
 from astrbot.api import FunctionTool as _FT
@@ -34,8 +34,10 @@ class TaskListTool(_FT):
                         rpt["summary"] += f" （最近完成 {len(rec)} 项归档）"
                     return json.dumps(rpt, ensure_ascii=False)
                 sp = os.path.join(cur(), "00_task_state.json")
-                with open(sp, "r", encoding="utf-8") as f:
-                    st = json.load(f)
+                try:
+                    st = await asyncio.to_thread(lambda: json.load(open(sp, "r", encoding="utf-8")))
+                except Exception as e:
+                    return err(f"读取状态失败: {e}")
                 tds = st.get("todos", [])
                 return ok(tds, summary=summary(tds), workspace="task_scaffolds/current/",
                           status="active", slug=st.get("slug"),
@@ -49,10 +51,8 @@ class TaskListTool(_FT):
                 e = validate(todos)
                 if e:
                     return err(e)
-                if title and todos and title.strip() == todos[0].get("content", "")[:60].strip():
-                    return err("title 不能和第一个子任务内容相同，请写简短的概括性标题")
                 slug = gen_slug(workspace_slug or None)
-                fs = init_ws(todos, slug, tags, title or f"任务工单 · {slug}", cwd)
+                fs = await asyncio.to_thread(init_ws, todos, slug, tags, title or f"任务工单 · {slug}", cwd)
                 return ok(todos, summary=summary(todos), workspace="task_scaffolds/current/",
                           files=fs, action="workspace_created", slug=slug)
 
@@ -64,10 +64,12 @@ class TaskListTool(_FT):
                     return err(e)
                 if not active:
                     return err("无活跃任务，无法 update。请先调用 task_list(action='start') 启动任务。")
-                update_state(todos)
+                state = await asyncio.to_thread(update_state, todos)
+                if state is None:
+                    return err("无活跃任务或状态文件丢失，无法 update")
                 done = all(t.get("status") in ("completed", "cancelled") for t in todos)
                 if done:
-                    arc_result = do_archive()
+                    arc_result = await asyncio.to_thread(do_archive)
                     sl = arc_result.get("slug", "unknown") if arc_result else "unknown"
                     return ok(todos, summary=f"全部完成 — 已归档到 archive/{sl}/",
                               workspace=f"task_scaffolds/archive/{sl}/", action="archived")
@@ -77,12 +79,14 @@ class TaskListTool(_FT):
                 if not active:
                     return err("未进入长任务模式，无需 complete。查看历史归档请用 task_archive(action='list')")
                 sp = os.path.join(cur(), "00_task_state.json")
-                with open(sp, "r", encoding="utf-8") as f:
-                    st = json.load(f)
+                try:
+                    st = await asyncio.to_thread(lambda: json.load(open(sp, "r", encoding="utf-8")))
+                except Exception as e:
+                    return err(f"读取状态失败: {e}")
                 tds = st.get("todos", [])
                 slug = st.get("slug", "unknown")
                 report = gen_report(tds, slug)
-                do_archive()
+                await asyncio.to_thread(do_archive)
                 return json.dumps({"ok": True, "report": report, "archive_path": f"task_scaffolds/archive/{slug}/",
                                    "summary": f"已归档: {slug}", "action": "completed"}, ensure_ascii=False)
 
@@ -122,14 +126,17 @@ class TaskArchiveTool(_FT):
                 total = len(dirs)
                 for d in dirs[offset:offset + page_limit]:
                     sp = os.path.join(a, d, "00_task_state.json")
-                    if os.path.isfile(sp):
-                        with open(sp, "r", encoding="utf-8") as f:
-                            st = json.load(f)
-                        tds = st.get("todos", [])
-                        items.append({"slug": d, "count": len(tds),
-                                      "completed": sum(1 for t in tds if t.get("status") in ("completed", "cancelled")),
-                                      "tags": st.get("tags", []),
-                                      "summary": tds[0]["content"][:60] if tds else ""})
+                    if not os.path.isfile(sp):
+                        continue
+                    try:
+                        st = await asyncio.to_thread(lambda: json.load(open(sp, "r", encoding="utf-8")))
+                    except Exception:
+                        continue
+                    tds = st.get("todos", [])
+                    items.append({"slug": d, "count": len(tds),
+                                  "completed": sum(1 for t in tds if t.get("status") in ("completed", "cancelled")),
+                                  "tags": st.get("tags", []),
+                                  "summary": tds[0]["content"][:60] if tds else ""})
                 return json.dumps({"ok": True, "archives": items, "total": total,
                                    "has_more": offset + len(items) < total}, ensure_ascii=False)
 
@@ -137,6 +144,9 @@ class TaskArchiveTool(_FT):
                 if not slug or not file:
                     return err("read 需要 slug 和 file 参数")
                 from pathlib import Path
+                from ._paths import safe_name
+                if not safe_name(slug) or not safe_name(file):
+                    return err("slug 或 file 包含非法字符")
                 base = Path(arc()).resolve()
                 try:
                     fp = (base / slug / file).resolve()
@@ -145,7 +155,7 @@ class TaskArchiveTool(_FT):
                     return err(f"文件不存在: {slug}/{file}")
                 if not fp.is_file():
                     return err(f"文件不存在: {slug}/{file}")
-                content = fp.read_text(encoding="utf-8")
+                content = await asyncio.to_thread(fp.read_text, encoding="utf-8")
                 return json.dumps({"ok": True, "slug": slug, "file": file,
                                    "content": content[:5000],
                                    "truncated": len(content) > 5000}, ensure_ascii=False)
@@ -163,8 +173,10 @@ class TaskArchiveTool(_FT):
                             fp = os.path.join(dp, fn)
                             if not os.path.isfile(fp):
                                 continue
-                            with open(fp, "r", encoding="utf-8") as f:
-                                txt = f.read()
+                            try:
+                                txt = await asyncio.to_thread(lambda: open(fp, "r", encoding="utf-8").read())
+                            except Exception:
+                                continue
                             idx = txt.lower().find(keyword.lower())
                             if idx >= 0:
                                 start = max(0, idx - 40)

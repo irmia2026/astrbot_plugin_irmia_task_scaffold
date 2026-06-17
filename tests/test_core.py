@@ -66,12 +66,18 @@ def test_state_gen_slug():
 
 # Test _paths
 def test_paths_root():
-    from astrbot_plugin_irmia_task_scaffold._paths import root, cur, arc, mode_path
+    from astrbot_plugin_irmia_task_scaffold._paths import root, cur, arc, mode_path, set_root
     r = root()
     assert r.endswith("task_scaffolds")
     assert cur().endswith("current")
     assert arc().endswith("archive")
     assert mode_path().endswith("mode.json")
+    # 测试 set_root 覆盖
+    set_root("/tmp/custom_task_scaffolds")
+    assert root() == "/tmp/custom_task_scaffolds"
+    assert cur().startswith("/tmp/custom_task_scaffolds")
+    # 恢复默认值，避免影响其他测试
+    set_root(r)
     print("  paths OK")
 
 # Test activity
@@ -88,6 +94,95 @@ def test_activity_trim():
     assert lines[0].strip() == "line 5"
     os.remove(tmp)
     print("  activity.trim_line_file OK")
+
+
+def test_safe_name():
+    from astrbot_plugin_irmia_task_scaffold._paths import safe_name
+    assert safe_name("2026-05-31_auto-1")
+    assert safe_name("03_work_order.md")
+    assert safe_name("slug_with.chars")
+    assert not safe_name("")
+    assert not safe_name("..")
+    assert not safe_name("a/b")
+    assert not safe_name("a\\b")
+    assert not safe_name("a\x00b")
+    assert not safe_name("a:b")
+    print("  safe_name OK")
+
+
+def test_workorder_width():
+    from astrbot_plugin_irmia_task_scaffold._state import workorder, _display_width
+    todos = [{"content": "中文任务内容测试", "status": "pending"}]
+    wo = workorder(todos, "2026-05-31_test")
+    lines = wo.split("\n")
+    # 第一行和最后一行是边框，宽度应一致（均为 63 个字符：│ + 61 空格 + │）
+    assert len(lines[0]) == len(lines[7]) == 63
+    # 验证显示宽度计算
+    assert _display_width("中文") == 4
+    assert _display_width("ab") == 2
+    print("  workorder width OK")
+
+
+def test_token_stats_cached():
+    from astrbot_plugin_irmia_task_scaffold._tokens import get_stats, token_fp, record_usage
+    from astrbot_plugin_irmia_task_scaffold._paths import root, set_root
+    import astrbot_plugin_irmia_task_scaffold._constants as _c
+    tmp = tempfile.mkdtemp()
+    original = root()
+    set_root(tmp)
+    # 重置 token_fp 缓存
+    import astrbot_plugin_irmia_task_scaffold._tokens as _t
+    _t._TOKEN_FILE = None
+    # 保存旧值
+    old_session = _c._SESSION_TOKENS
+    old_in = _c._SESSION_TOKENS_IN
+    old_cached = _c._SESSION_TOKENS_CACHED
+    old_out = _c._SESSION_TOKENS_OUT
+    old_ctx = _c._LAST_CTX_SIZE
+    old_limit = _c._CONTEXT_LIMIT
+    _c._SESSION_TOKENS = 0
+    _c._SESSION_TOKENS_IN = 0
+    _c._SESSION_TOKENS_CACHED = 0
+    _c._SESSION_TOKENS_OUT = 0
+    _c._LAST_CTX_SIZE = 0
+    _c._CONTEXT_LIMIT = 200000
+    # 写入本月数据
+    record_usage(10, 5, 20)
+    stats = get_stats()
+    assert stats["month_total"] == 35  # i + c + o
+    # session_* 由 main.py _on_response 维护，此处只验证 month_total 计入 cached
+    # 清理
+    shutil.rmtree(tmp, ignore_errors=True)
+    _c._SESSION_TOKENS = old_session
+    _c._SESSION_TOKENS_IN = old_in
+    _c._SESSION_TOKENS_CACHED = old_cached
+    _c._SESSION_TOKENS_OUT = old_out
+    _c._LAST_CTX_SIZE = old_ctx
+    _c._CONTEXT_LIMIT = old_limit
+    set_root(original)
+    _t._TOKEN_FILE = None
+    print("  token stats cached OK")
+
+
+def test_update_state_no_implicit_workspace():
+    from astrbot_plugin_irmia_task_scaffold._state import update_state
+    from astrbot_plugin_irmia_task_scaffold._paths import root, cur, set_root
+    tmp = tempfile.mkdtemp()
+    original = root()
+    set_root(tmp)
+    os.makedirs(cur(), exist_ok=True)
+    # 未创建状态文件时调用 update_state 不应隐式创建工作区文件
+    update_state([{"content": "a", "status": "pending"}])
+    assert not os.path.isfile(os.path.join(cur(), "00_task_state.json"))
+    # 创建状态文件后再 update 才允许
+    with open(os.path.join(cur(), "00_task_state.json"), "w", encoding="utf-8") as f:
+        json.dump({"slug": "test", "todos": [], "tags": [], "title": "", "cwd": ""}, f)
+    update_state([{"content": "a", "status": "completed"}])
+    assert os.path.isfile(os.path.join(cur(), "00_task_state.json"))
+    # 恢复
+    set_root(original)
+    shutil.rmtree(tmp, ignore_errors=True)
+    print("  update_state no implicit workspace OK")
 
 # Test templates
 def test_templates():
@@ -194,6 +289,10 @@ if __name__ == "__main__":
     test_state_gen_slug()
     test_paths_root()
     test_activity_trim()
+    test_safe_name()
+    test_workorder_width()
+    test_token_stats_cached()
+    test_update_state_no_implicit_workspace()
     test_templates()
     test_templates_content()
     test_plan_filter()

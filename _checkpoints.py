@@ -34,14 +34,22 @@ def do_checkpoint(name: str):
     try:
         _copy_current(dst)
         # 额外保存元数据
+        files = []
+        for root_dir, _, filenames in os.walk(dst):
+            for fn in filenames:
+                rel = os.path.relpath(os.path.join(root_dir, fn), dst)
+                if rel == "_checkpoint_meta.json":
+                    continue
+                files.append(rel.replace("\\", "/"))
         meta = {
             "checkpoint_name": name,
             "checkpoint_at": datetime.now().isoformat(timespec="seconds"),
             "todos_count": len(json.load(open(os.path.join(dst, "00_task_state.json"), "r", encoding="utf-8")).get("todos", [])),
+            "files": sorted(files),
         }
         with open(os.path.join(dst, "_checkpoint_meta.json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
-        return json.dumps({"ok": True, "checkpoint": name, "todos_count": meta["todos_count"]}, ensure_ascii=False)
+        return json.dumps({"ok": True, "checkpoint": name, "todos_count": meta["todos_count"], "files": len(files)}, ensure_ascii=False)
     except Exception as e:
         return err(f"创建检查点失败: {e}")
 

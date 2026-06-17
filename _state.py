@@ -88,33 +88,63 @@ def err(msg):
     return json.dumps({"ok": False, "error": msg}, ensure_ascii=False)
 
 
+def _display_width(s):
+    """计算字符串在等宽字体中的显示列宽，优先使用 wcwidth，回退到中文 heuristic。"""
+    try:
+        from wcwidth import wcswidth
+        w = wcswidth(s)
+        if w is not None and w >= 0:
+            return w
+    except Exception:
+        pass
+    w = 0
+    for ch in s:
+        o = ord(ch)
+        if o == 0xE or o == 0xF:  # 部分零宽字符
+            continue
+        if 0x4E00 <= o <= 0x9FFF or 0x3400 <= o <= 0x4DBF or 0xF900 <= o <= 0xFAFF:
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def _pad_to(s, width):
+    """用空格填充至指定显示宽度。"""
+    sw = _display_width(s)
+    pad = max(0, width - sw)
+    return s + " " * pad
+
+
 def workorder(todos, slug):
     tp = todos[0]["content"][:60] if todos else "空任务列表"
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
     w = 61
     L = []
-    L.append("\u250c" + "\u2500" * w + "\u2510")
-    L.append("\u2502           任务脚手架 \u00b7 工单" + " " * (w - 20) + "\u2502")
-    L.append("\u2502" + " " * w + "\u2502")
-    L.append(f"\u2502  编号: {slug}" + " " * (w - 10 - len(slug)) + "\u2502")
-    L.append(f"\u2502  主题: {tp[:45]}" + " " * (w - 10 - len(tp[:45])) + "\u2502")
-    L.append("\u2502  生成: 自动（irmia_task_scaffold）" + " " * (w - 28) + "\u2502")
-    L.append(f"\u2502  时间: {ts}" + " " * (w - 10 - len(ts)) + "\u2502")
-    L.append("\u2514" + "\u2500" * w + "\u2518\n\n## 约束\n")
+    L.append("┌" + "─" * w + "┐")
+    L.append("│" + _pad_to("           任务脚手架 · 工单", w) + "│")
+    L.append("│" + " " * w + "│")
+    L.append("│  编号: " + _pad_to(slug, w - 8) + "│")
+    L.append("│  主题: " + _pad_to(tp[:45], w - 8) + "│")
+    L.append("│  生成: 自动（irmia_task_scaffold）" + " " * (w - 28) + "│")
+    L.append("│  时间: " + _pad_to(ts, w - 8) + "│")
+    L.append("└" + "─" * w + "┘\n\n## 约束\n")
     has = False
     S = {"pending": "待执行", "in_progress": "进行中", "completed": "已完成", "cancelled": "已取消"}
     for i, t in enumerate(todos):
         c = t["content"].strip()
         if len(c) > 5:
-            L.append(f"\u2502 M{i+1} \u00b7 {c[:55]}")
+            L.append(f"│ M{i+1} · {c[:55]}")
             has = True
     if not has:
-        L.append("\u2502 （无特殊约束）")
-    L.append("\n## 交付清单\n\n| # | 内容 | 状态 |\n|---|------|------|")
+        L.append("│ （无特殊约束）")
+    L.append("\n## 交付清单\n\n| # | 内容 | 状态 |\n|---|---|------|")
     for i, t in enumerate(todos):
         L.append(f"| {i+1} | {t['content'][:45]} | {S.get(t.get('status', 'pending'), '待执行')} |")
-    L.append(f"\n{'\u2500' * w}\n弥亚 \u00b7 {ts}")
+    L.append(f"\n{'─' * w}\n弥亚 · {ts}")
     return "\n".join(L) + "\n"
+
+
 
 
 def init_ws(todos, slug, tags=None, title="", cwd=""):
@@ -147,7 +177,8 @@ def update_state(todos):
         with open(sp, "r", encoding="utf-8") as f:
             state = json.load(f)
     except (json.JSONDecodeError, FileNotFoundError):
-        state = {"slug": "unknown", "todos": [], "tags": [], "title": "", "cwd": ""}
+        # 不隐式创建工作区；调用方应确保已有活跃任务
+        return None
     old = state.get("todos", [])
     now = datetime.now().isoformat(timespec="seconds")
     ch = []

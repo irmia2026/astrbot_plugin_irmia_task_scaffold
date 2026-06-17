@@ -42,15 +42,17 @@ async def log(agent: str, status: str, detail: str, tool: str = None, task_summa
     line = json.dumps(entry, ensure_ascii=False) + "\n"
     async with _ACTIVITY_LOCK:
         try:
-            with open(fp, "a", encoding="utf-8") as f:
-                f.write(line)
+            def _append():
+                with open(fp, "a", encoding="utf-8") as f:
+                    f.write(line)
+            await asyncio.to_thread(_append)
         except Exception as e:
             _log_debug(f"log_activity 写入失败: {e}")
             return
         _ACTIVITY_WRITE_COUNT += 1
         if _ACTIVITY_WRITE_COUNT % 50 == 0:
             from ._config import get
-            trim_line_file(fp, get("activity_max_lines", 200))
+            await asyncio.to_thread(trim_line_file, fp, get("activity_max_lines", 200))
 
 
 def trim_line_file(fp: str, max_lines: int):

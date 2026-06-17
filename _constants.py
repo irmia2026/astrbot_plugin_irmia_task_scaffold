@@ -149,7 +149,7 @@ _TASK_LIST_DESC = (
     "这些信息在上下文被截断后极易丢失，写入文件可永久保留，供后续轮次召回。"
     "\n\n示例——应当追踪: 实现新功能、修复复杂Bug、大规模重构、多文件审查、跨模块改动。"
     "不追踪: 解释概念、小改一行、查API用法、聊天问候。"
-    "start时必须提供简短概括性标题(title)，禁止用第一个子任务内容当标题。"
+    "start时title可选；省略时将自动生成。一旦进入长任务模式(start成功)，之后所有子任务进度都用update更新，绝不再调start。"
     "action: start/update/complete/status/load_template/list_templates/checkpoint/rollback/list_checkpoints"
 )
 
