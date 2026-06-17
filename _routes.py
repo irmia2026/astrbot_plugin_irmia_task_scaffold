@@ -76,30 +76,74 @@ def register_routes(context):
 
     async def api_archives():
         from ._config import get as config_get
-        items = []
         a = arc()
-        limit = config_get("archive_list_limit", 50)
-        if os.path.isdir(a):
-            dirs = sorted([d for d in os.listdir(a) if os.path.isdir(os.path.join(a, d))], reverse=True)
-            for d in dirs[:limit]:
+        if not os.path.isdir(a):
+            return jsonify({"total": 0, "items": [], "has_more": False})
+
+        # 分页参数
+        try:
+            offset = max(0, int(qr.args.get("offset", 0)))
+            limit = max(1, min(100, int(qr.args.get("limit", config_get("archive_list_limit", 50)))))
+        except Exception:
+            offset = 0
+            limit = config_get("archive_list_limit", 50)
+
+        q = (qr.args.get("q", "") or "").strip().lower()
+
+        # 读取所有有效归档目录（按 slug 倒序）
+        dirs = sorted([d for d in os.listdir(a) if os.path.isdir(os.path.join(a, d))], reverse=True)
+
+        # 搜索过滤
+        if q:
+            filtered = []
+            for d in dirs:
                 sp = os.path.join(a, d, "00_task_state.json")
-                if os.path.isfile(sp):
+                if not os.path.isfile(sp):
+                    continue
+                try:
                     with open(sp, "r", encoding="utf-8") as f:
                         st = json.load(f)
-                    tds = st.get("todos", [])
-                    comp = sum(1 for t in tds if t.get("status") in ("completed", "cancelled"))
-                    completed_at = ""
-                    lp = os.path.join(a, d, "progress.log")
-                    if os.path.isfile(lp):
-                        with open(lp, "r", encoding="utf-8") as f:
-                            for line in f:
-                                if "archived" in line and line.startswith("["):
-                                    completed_at = line[1:20]
-                    items.append({"slug": d, "completed_at": completed_at, "count": len(tds),
-                                  "completed": comp, "tags": st.get("tags", []),
-                                  "title": st.get("title", "") or (tds[0]["content"][:60] if tds else ""),
-                                  "summary": tds[0]["content"][:60] if tds else ""})
-        return jsonify(items[:50])
+                except Exception:
+                    continue
+                text = " ".join([
+                    d,
+                    st.get("title", ""),
+                    st.get("cwd", ""),
+                    " ".join(st.get("tags", [])),
+                    " ".join(t.get("content", "") for t in st.get("todos", [])),
+                ]).lower()
+                if q in text:
+                    filtered.append(d)
+            dirs = filtered
+
+        total = len(dirs)
+
+        def _item(d):
+            sp = os.path.join(a, d, "00_task_state.json")
+            try:
+                with open(sp, "r", encoding="utf-8") as f:
+                    st = json.load(f)
+            except Exception:
+                return None
+            tds = st.get("todos", [])
+            comp = sum(1 for t in tds if t.get("status") in ("completed", "cancelled"))
+            completed_at = ""
+            lp = os.path.join(a, d, "progress.log")
+            if os.path.isfile(lp):
+                with open(lp, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if "archived" in line and line.startswith("["):
+                            completed_at = line[1:20]
+                            break
+            return {"slug": d, "completed_at": completed_at, "count": len(tds),
+                    "completed": comp, "tags": st.get("tags", []),
+                    "title": st.get("title", "") or (tds[0]["content"][:60] if tds else ""),
+                    "summary": tds[0]["content"][:60] if tds else ""}
+
+        items = [_item(d) for d in dirs[offset:offset + limit]]
+        items = [i for i in items if i]
+
+        return jsonify({"total": total, "items": items, "has_more": offset + len(items) < total})
 
     async def api_archive_summary(slug):
         fp = _safe_path(arc(), slug, "00_task_state.json")

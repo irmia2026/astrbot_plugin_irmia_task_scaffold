@@ -154,10 +154,21 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 .file-preview-body{flex:1;overflow-y:auto;padding:12px 14px;font-family:'JetBrains Mono','Consolas',monospace;font-size:10px;line-height:1.6;white-space:pre-wrap;color:#475569}
 
 .archive-wrap{padding:12px 18px}
-.archive-search{width:100%;padding:7px 12px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--font);background:var(--surface);margin-bottom:12px}
+.archive-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.archive-fold{display:flex;gap:4px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:2px}
+.archive-fold .fold-btn{font-size:10px;font-weight:600;padding:4px 10px;border-radius:4px;cursor:pointer;color:var(--text2);border:none;background:transparent}
+.archive-fold .fold-btn.active{background:var(--surface);color:var(--blue);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.archive-search{flex:1;min-width:140px;padding:7px 12px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--font);background:var(--surface)}
 .archive-search:focus{outline:none;border-color:var(--blue)}
-.arc-month{font-size:11px;font-weight:700;color:var(--text);padding:10px 0 6px;display:flex;align-items:baseline;gap:8px}
-.arc-month-n{font-size:10px;font-weight:400;color:var(--muted)}
+.arc-load-more{text-align:center;padding:14px}
+.arc-load-more button{font-size:11px;padding:6px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer}
+.arc-load-more button:hover{border-color:var(--blue);color:var(--blue)}
+.arc-load-more button:disabled{opacity:.5;cursor:not-allowed}
+.arc-group{font-size:12px;font-weight:700;color:var(--text);padding:10px 0 6px;display:flex;align-items:baseline;gap:8px}
+.arc-group-n{font-size:10px;font-weight:400;color:var(--muted)}
+.arc-group.open::before{content:'▼';font-size:9px;color:var(--muted);cursor:pointer}
+.arc-group.closed::before{content:'▶';font-size:9px;color:var(--muted);cursor:pointer}
+.arc-group-items{overflow:hidden;transition:max-height .2s}
 .arc-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:6px;cursor:pointer;transition:border-color .1s}
 .arc-card:hover{border-color:var(--blue)}
 .arc-card-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
@@ -258,11 +269,20 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
     <div class="panel-header">已归档长任务 <span id="stats-bar" style="font-weight:400;margin-left:auto;font-size:10px"></span></div>
     <div class="panel-body">
       <div class="archive-wrap">
-        <input class="archive-search" type="text" placeholder="搜索归档..." id="arc-search" oninput="filterArchive()">
+        <div class="archive-toolbar">
+          <div class="archive-fold" id="archive-fold">
+            <button class="fold-btn active" data-fold="month" onclick="setFold('month')">月</button>
+            <button class="fold-btn" data-fold="year" onclick="setFold('year')">年</button>
+            <button class="fold-btn" data-fold="week" onclick="setFold('week')">周</button>
+            <button class="fold-btn" data-fold="day" onclick="setFold('day')">日</button>
+          </div>
+          <input class="archive-search" type="text" placeholder="搜索归档..." id="arc-search" oninput="filterArchive()">
+        </div>
         <div id="archive-list"><div class="empty-state"><div class="empty-box"></div><h4>加载中...</h4></div></div>
-</div>
-</div>
-</div>
+        <div class="arc-load-more" id="arc-load-more" style="display:none"></div>
+      </div>
+    </div>
+  </div>
 
 </div>
 
@@ -309,7 +329,7 @@ async function checkOnline(){
     else{dot.classList.add('off');if(txt)txt.textContent='AstrBot 离线'}
   }catch(e){dot.classList.add('off');if(txt)txt.textContent='AstrBot 离线'}
 }
-let ST={current:null,archives:[],activeCat:'all',files:{},_cacheAct:'',_cacheCur:'',_lastActive:null},_rendered=new Set();
+let ST={current:null,archives:[],archiveTotal:0,archiveOffset:0,archiveLimit:20,activeCat:'all',fold:'month',collapsed:{},files:{},_cacheAct:'',_cacheCur:'',_lastActive:null},_rendered=new Set();
 
 async function get(path){
   if(typeof E!=='undefined'&&API==='__EMBEDDED__'){
@@ -464,14 +484,23 @@ async function selectFile(name){
   const pb=document.getElementById('preview-body');pb.textContent=content.slice(0,5000)+hint;pb.classList.add('fade');setTimeout(()=>pb.classList.remove('fade'),250);
 }
 
-async function loadArchives(){
-  // 归档列表不参��高频轮询，由初始化或切换视图时调用
-  document.getElementById('archive-list').innerHTML=_skelArchive();
-  let arcs;
-  try{arcs=await get('/archives');}catch(e){return;}
-  if(!arcs||!Array.isArray(arcs)){console.warn('loadArchives: non-array',arcs);arcs=[];}
-  ST.archives=arcs;
-  document.getElementById('archive-badge').textContent=ST.archives.length;
+async function loadArchives(reset=true){
+  // 归档列表不参与高频轮询，由初始化或切换视图时调用
+  if(reset){
+    ST.archiveOffset=0;
+    ST.archives=[];
+    ST.collapsed={};
+    document.getElementById('archive-list').innerHTML=_skelArchive();
+  }
+  const q=document.getElementById('arc-search')?.value?.trim()||'';
+  let data;
+  try{data=await get('/archives?offset='+ST.archiveOffset+'&limit='+ST.archiveLimit+(q?'&q='+encodeURIComponent(q):''));}catch(e){return;}
+  if(!data||typeof data!=='object'){console.warn('loadArchives: unexpected',data);data={items:[]};}
+  if(Array.isArray(data)) data={items:data,total:data.length,has_more:false};
+  if(reset) ST.archives=data.items||[];
+  else ST.archives=ST.archives.concat(data.items||[]);
+  ST.archiveTotal=data.total||ST.archives.length;
+  document.getElementById('archive-badge').textContent=ST.archiveTotal;
   const tags={};
   ST.archives.forEach(a=>{(a.tags||[]).forEach(t=>{tags[t]=(tags[t]||0)+1})});
   const tc=document.getElementById('tag-cats');
@@ -480,6 +509,7 @@ async function loadArchives(){
     tc.innerHTML+='<div class="nav-item'+(ST.activeCat===tag?' active':'')+'" style="font-size:12px" onclick="filterArchiveCat(\''+esc(tag)+'\')"> '+esc(tag)+' ('+n+')</div>';
   });
   renderArchive();
+  renderLoadMore(data.has_more);
 }
 
 function renderArchive(){
@@ -489,28 +519,100 @@ function renderArchive(){
   if(kw) items=items.filter(a=>((a.slug||'')+' '+(a.summary||'')+' '+(a.tags||[]).join(' ')).toLowerCase().includes(kw));
   const groups={};
   items.forEach(a=>{
-    const m=(a.slug||'').substring(0,7)||'未知';
-    if(!groups[m]) groups[m]=[];
-    groups[m].push(a);
+    const key=groupKey(a,ST.fold);
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(a);
   });
   let h='';
-  Object.keys(groups).sort().reverse().forEach(m=>{
-    h+='<div class="arc-month">'+m+'<span class="arc-month-n">'+groups[m].length+' 项</span></div>';
-    groups[m].forEach(a=>{
-      const pct=a.count?Math.round((a.completed||0)/a.count*100):0;
-      const done=pct===100;
-      const title=a.title||a.summary||'';
-      const sid=('ad-'+a.slug).replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g,'-');
-      h+='<div class="arc-card" onclick="loadArchiveDetail(\''+esc(a.slug||'')+'\',this)">';
-      h+='<div class="arc-card-top"><div class="arc-card-title">'+esc(title||a.slug||'')+'</div><div class="arc-card-badge '+(done?'done':'')+'">'+(done?'完成':(a.completed||0)+'/'+(a.count||0))+'</div></div>';
-      h+='<div class="arc-card-bar"><div style="width:'+pct+'%"></div></div>';
-      h+='<div class="arc-card-meta"><span>'+(a.completed_at||'').slice(0,10)+'</span><span class="arc-card-slug">'+esc(a.slug||'')+'</span>';
-      if(a.tags&&a.tags.length) h+='<span>'+a.tags.map(t=>'<b>'+esc(t)+'</b>').join(' ')+'</span>';
-      h+='</div><div class="arc-item-detail" id="'+sid+'"></div></div>';
-    });
+  Object.keys(groups).sort().reverse().forEach(key=>{
+    const label=groupLabel(key,ST.fold);
+    const cls=ST.collapsed[key]?'closed':'open';
+    h+='<div class="arc-group '+cls+'" onclick="toggleGroup(\''+esc(key)+'\')" data-key="'+esc(key)+'" title="点击折叠/展开">'+esc(label)+'<span class="arc-group-n">'+groups[key].length+' 项</span></div>';
+    if(!ST.collapsed[key]){
+      h+='<div class="arc-group-items" data-key="'+esc(key)+'">';
+      groups[key].forEach(a=>{
+        h+=renderArchiveCard(a);
+      });
+      h+='</div>';
+    }
   });
   if(!h) h='<div class="empty-state"><div class="empty-box"></div><h4>没有找到匹配的归档</h4></div>';
   document.getElementById('archive-list').innerHTML=h;
+}
+
+function renderArchiveCard(a){
+  const pct=a.count?Math.round((a.completed||0)/a.count*100):0;
+  const done=pct===100;
+  const title=a.title||a.summary||'';
+  const sid=('ad-'+a.slug).replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g,'-');
+  let h='';
+  h+='<div class="arc-card" onclick="loadArchiveDetail(\''+esc(a.slug||'')+'\',this)">';
+  h+='<div class="arc-card-top"><div class="arc-card-title">'+esc(title||a.slug||'')+'</div><div class="arc-card-badge '+(done?'done':'')+'">'+(done?'完成':(a.completed||0)+'/'+(a.count||0))+'</div></div>';
+  h+='<div class="arc-card-bar"><div style="width:'+pct+'%"></div></div>';
+  h+='<div class="arc-card-meta"><span>'+(a.completed_at||'').slice(0,10)+'</span><span class="arc-card-slug">'+esc(a.slug||'')+'</span>';
+  if(a.tags&&a.tags.length) h+='<span>'+a.tags.map(t=>'<b>'+esc(t)+'</b>').join(' ')+'</span>';
+  h+='</div><div class="arc-item-detail" id="'+sid+'"></div></div>';
+  return h;
+}
+
+function _dateFromSlug(slug){
+  if(!slug) return null;
+  const m=slug.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if(!m) return null;
+  const d=new Date(+m[1],+m[2]-1,+m[3]);
+  return isNaN(d.getTime())?null:d;
+}
+
+function groupKey(a,fold){
+  const d=_dateFromSlug(a.slug)||_dateFromSlug(a.completed_at);
+  if(!d) return '未知时间';
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+  if(fold==='year') return `${y}`;
+  if(fold==='month') return `${y}-${m}`;
+  if(fold==='day') return `${y}-${m}-${day}`;
+  if(fold==='week'){
+    const sun=new Date(d); sun.setDate(d.getDate()-d.getDay()); // 周日为周首
+    return `${sun.getFullYear()}-${String(sun.getMonth()+1).padStart(2,'0')}-${String(sun.getDate()).padStart(2,'0')}`;
+  }
+  return `${y}-${m}`;
+}
+
+function groupLabel(key,fold){
+  if(key==='未知时间') return '未知时间';
+  const [y,m,d]=key.split('-');
+  if(fold==='year') return `${y}年`;
+  if(fold==='month') return `${y}年${m}月`;
+  if(fold==='day') return `${y}年${m}月${d}日`;
+  if(fold==='week') return `${y}年${m}月${d}日 当周`;
+  return key;
+}
+
+function setFold(mode){
+  ST.fold=mode;
+  document.querySelectorAll('#archive-fold .fold-btn').forEach(b=>b.classList.toggle('active',b.dataset.fold===mode));
+  renderArchive();
+}
+
+function toggleGroup(key){
+  ST.collapsed[key]=!ST.collapsed[key];
+  const g=document.querySelector('.arc-group[data-key="'+esc(key)+'"]');
+  const items=document.querySelector('.arc-group-items[data-key="'+esc(key)+'"]');
+  if(g) g.classList.toggle('closed',!!ST.collapsed[key]);
+  if(items) items.style.display=ST.collapsed[key]?'none':'block';
+}
+
+function renderLoadMore(hasMore){
+  const el=document.getElementById('arc-load-more');
+  if(!hasMore){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='block';
+  el.innerHTML='<button onclick="loadMoreArchives()">加载更多 ('+ST.archives.length+' / '+ST.archiveTotal+')</button>';
+}
+
+async function loadMoreArchives(){
+  ST.archiveOffset+=ST.archiveLimit;
+  const btn=document.querySelector('#arc-load-more button');
+  if(btn) btn.disabled=true;
+  await loadArchives(false);
 }
 
 async function loadArchiveDetail(slug, el){
@@ -541,6 +643,8 @@ async function viewArchiveFile(slug, name){
   }catch(e){}
 }
 
+function filterArchive(){loadArchives(true);}
+
 function filterArchiveCat(cat){
   ST.activeCat=cat;
   document.querySelectorAll('#tag-cats .nav-item').forEach(el=>el.classList.remove('active'));
@@ -548,8 +652,6 @@ function filterArchiveCat(cat){
   cats.forEach(el=>{const t=el.textContent.trim();if(cat==='all'?t==='全部':t.startsWith(cat+' ('))el.classList.add('active')});
   renderArchive();
 }
-
-function filterArchive(){renderArchive();}
 
 async function loadActivity(){
   try{

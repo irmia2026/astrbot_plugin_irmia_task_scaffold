@@ -113,23 +113,25 @@ class TaskArchiveTool(_FT):
         try:
             a = arc()
             if action == "list":
+                offset = max(0, int(slug) if slug else 0)
+                page_limit = max(1, min(100, int(file) if file else 20))
                 items = []
                 dirs = []
                 if os.path.isdir(a):
                     dirs = sorted([d for d in os.listdir(a) if os.path.isdir(os.path.join(a, d))], reverse=True)
-                    for d in dirs[:50]:
-                        sp = os.path.join(a, d, "00_task_state.json")
-                        if os.path.isfile(sp):
-                            with open(sp, "r", encoding="utf-8") as f:
-                                st = json.load(f)
-                            tds = st.get("todos", [])
-                            items.append({"slug": d, "count": len(tds),
-                                          "completed": sum(1 for t in tds if t.get("status") in ("completed", "cancelled")),
-                                          "tags": st.get("tags", []),
-                                          "summary": tds[0]["content"][:60] if tds else ""})
                 total = len(dirs)
-                return json.dumps({"ok": True, "archives": items[:20], "total": total,
-                                   "has_more": len(items) > 20}, ensure_ascii=False)
+                for d in dirs[offset:offset + page_limit]:
+                    sp = os.path.join(a, d, "00_task_state.json")
+                    if os.path.isfile(sp):
+                        with open(sp, "r", encoding="utf-8") as f:
+                            st = json.load(f)
+                        tds = st.get("todos", [])
+                        items.append({"slug": d, "count": len(tds),
+                                      "completed": sum(1 for t in tds if t.get("status") in ("completed", "cancelled")),
+                                      "tags": st.get("tags", []),
+                                      "summary": tds[0]["content"][:60] if tds else ""})
+                return json.dumps({"ok": True, "archives": items, "total": total,
+                                   "has_more": offset + len(items) < total}, ensure_ascii=False)
 
             if action == "read":
                 if not slug or not file:
