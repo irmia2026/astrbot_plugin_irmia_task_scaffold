@@ -465,9 +465,7 @@ async function selectFile(name){
 }
 
 async function loadArchives(){
-  // 归档列表只在需要时刷新，不参与高频轮询
-  const ap=document.getElementById('archive-panel');
-  if(ap.style.display==='none') return;
+  // 归档列表不参��高频轮询，由初始化或切换视图时调用
   document.getElementById('archive-list').innerHTML=_skelArchive();
   let arcs;
   try{arcs=await get('/archives');}catch(e){return;}

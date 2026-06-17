@@ -107,8 +107,23 @@ class Main(star.Star):
         if name in ("task_list", "task_archive"):
             return
         # 仅对成功的工具响应推进任务进度
-        tr_text = str(tool_result) if tool_result is not None else ""
-        if "error" in tr_text.lower() or "失败" in tr_text or "exception" in tr_text.lower():
+        # 判断失败：工具返回本身是异常对象，或明确包含失败标记
+        failed = False
+        if tool_result is None:
+            failed = False
+        elif isinstance(tool_result, Exception):
+            failed = True
+        elif isinstance(tool_result, dict):
+            failed = not tool_result.get("ok", True)
+        else:
+            tr_text = str(tool_result)
+            # 仅对明确的失败提示敏感，避免正常 JSON 中的 error 字段误伤
+            lowered = tr_text.lower()
+            if ("failed" in lowered or "traceback" in lowered or
+                "错误:" in tr_text or "失败:" in tr_text or
+                "error:" in lowered or "exception:" in lowered):
+                failed = True
+        if failed:
             return
         cr = cur()
         sp = os.path.join(cr, "00_task_state.json")
@@ -170,9 +185,9 @@ class Main(star.Star):
         if done:
             try:
                 do_archive()
-                log_activity(_constants._AGENT_NAME, "任务完成", f"全部 {len(tds)} 项任务完成，已自动归档", tool=name)
-            except Exception:
-                pass
+                await log_activity(_constants._AGENT_NAME, "任务完成", f"全部 {len(tds)} 项任务完成，已自动归档", tool=name)
+            except Exception as e:
+                logger.error(f"自动归档失败: {e}")
 
     @register_on_llm_request()
     async def _on_llm_req(self, event, request) -> None:
