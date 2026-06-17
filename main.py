@@ -104,26 +104,32 @@ class Main(star.Star):
     @filter.on_llm_tool_respond()
     async def _on_tool_done(self, event: AstrMessageEvent, tool, tool_args, tool_result):
         name = tool.name if hasattr(tool, "name") else str(tool)
+        logger.debug(f"[_on_tool_done] tool={name} args={tool_args} result_type={type(tool_result).__name__}")
         if name in ("task_list", "task_archive"):
+            logger.debug(f"[_on_tool_done] skip exempt tool {name}")
             return
         # 仅对成功的工具响应推进任务进度
-        # 判断失败：工具返回本身是异常对象，或明确包含失败标记
         failed = False
+        fail_reason = ""
         if tool_result is None:
             failed = False
         elif isinstance(tool_result, Exception):
             failed = True
+            fail_reason = "result is Exception"
         elif isinstance(tool_result, dict):
             failed = not tool_result.get("ok", True)
+            if failed:
+                fail_reason = f"dict ok={tool_result.get('ok')}"
         else:
             tr_text = str(tool_result)
-            # 仅对明确的失败提示敏感，避免正常 JSON 中的 error 字段误伤
             lowered = tr_text.lower()
             if ("failed" in lowered or "traceback" in lowered or
                 "错误:" in tr_text or "失败:" in tr_text or
                 "error:" in lowered or "exception:" in lowered):
                 failed = True
+                fail_reason = f"matched fail keyword in text: {tr_text[:80]}"
         if failed:
+            logger.info(f"[_on_tool_done] skip advance for {name}: {fail_reason}")
             return
         cr = cur()
         sp = os.path.join(cr, "00_task_state.json")
@@ -132,10 +138,13 @@ class Main(star.Star):
                 state = json.load(f)
             tds = state.get("todos", [])
             if not tds:
+                logger.debug("[_on_tool_done] no todos, skip")
                 return
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[_on_tool_done] read state failed: {e}")
             return
 
+        logger.debug(f"[_on_tool_done] before advance: {[t.get('status') for t in tds]}")
         cwd = ""
         if isinstance(tool_args, dict):
             for k in ("filepath", "path", "cwd", "file", "directory", "dir"):
@@ -170,9 +179,11 @@ class Main(star.Star):
         try:
             with open(sp, "w", encoding="utf-8") as f:
                 json.dump(state, f, ensure_ascii=False, indent=2)
-        except Exception:
+        except Exception as e:
+            logger.error(f"[_on_tool_done] write state failed: {e}")
             return
 
+        logger.info(f"[_on_tool_done] advanced {name}: {[t.get('status') for t in tds]}")
         if updated:
             now = datetime.now().isoformat(timespec="seconds")
             try:
@@ -182,12 +193,14 @@ class Main(star.Star):
                 pass
 
         done = all(t.get("status") in ("completed", "cancelled") for t in tds)
+        logger.info(f"[_on_tool_done] done={done} for {name}")
         if done:
             try:
                 do_archive()
                 await log_activity(_constants._AGENT_NAME, "任务完成", f"全部 {len(tds)} 项任务完成，已自动归档", tool=name)
+                logger.info(f"[_on_tool_done] archived {len(tds)} tasks")
             except Exception as e:
-                logger.error(f"自动归档失败: {e}")
+                logger.error(f"[_on_tool_done] auto-archive failed: {e}")
 
     @register_on_llm_request()
     async def _on_llm_req(self, event, request) -> None:
