@@ -124,7 +124,7 @@ def init_ws(todos, slug, tags=None, title="", cwd=""):
     os.makedirs(cr, exist_ok=True)
     now = datetime.now().isoformat(timespec="seconds")
     st = {"slug": slug, "updated_at": now, "todos": todos, "tags": tags or [],
-          "title": title or (todos[0]["content"][:60] if todos else ""), "cwd": cwd}
+          "title": title, "cwd": cwd}
     with open(os.path.join(cr, "00_task_state.json"), "w", encoding="utf-8") as f:
         json.dump(st, f, ensure_ascii=False, indent=2)
     with open(os.path.join(cr, "01_research.md"), "w", encoding="utf-8") as f:

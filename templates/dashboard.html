@@ -465,6 +465,9 @@ async function selectFile(name){
 }
 
 async function loadArchives(){
+  // 归档列表只在需要时刷新，不参与高频轮询
+  const ap=document.getElementById('archive-panel');
+  if(ap.style.display==='none') return;
   document.getElementById('archive-list').innerHTML=_skelArchive();
   let arcs;
   try{arcs=await get('/archives');}catch(e){return;}
@@ -610,7 +613,7 @@ async function toggleMode(){
 setInterval(()=>{
   document.getElementById('nav-time').textContent=' · '+ts();
   if(typeof E==='undefined'||API!=='__EMBEDDED__'){loadCurrent();loadActivity();loadMode();loadStats();loadStatus();checkOnline();}
-},1000);
+},3000);
 
 loadCurrent();
 loadArchives();

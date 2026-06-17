@@ -27,8 +27,12 @@ def load_template(name: str):
     if not name:
         return err("load_template 需要 template 参数")
     td = tmpl_dir()
-    fp = os.path.join(td, f"{name}.json")
-    if not fp.startswith(os.path.abspath(td)):
+    from pathlib import Path
+    base = Path(td).resolve()
+    try:
+        fp = (base / f"{name}.json").resolve()
+        fp.relative_to(base)
+    except (ValueError, RuntimeError):
         return err(f"模板名不合法: {name}")
     if os.path.isfile(fp):
         try:

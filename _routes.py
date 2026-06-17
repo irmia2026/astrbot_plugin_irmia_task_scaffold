@@ -1,5 +1,6 @@
 """HTTP 路由注册。"""
 import json, os
+from pathlib import Path
 
 from astrbot.api import logger
 from ._paths import root, cur, arc
@@ -16,6 +17,17 @@ def _load_dashboard():
     fp = os.path.join(_PLUGIN_DIR, "templates", "dashboard.html")
     with open(fp, "r", encoding="utf-8") as f:
         return f.read()
+
+
+def _safe_path(base, *parts):
+    """严格的路径安全检查：返回 Path 或 None。"""
+    try:
+        base = Path(base).resolve()
+        target = base.joinpath(*parts).resolve()
+        target.relative_to(base)
+        return target
+    except (ValueError, RuntimeError):
+        return None
 
 
 def register_routes(context):
@@ -56,11 +68,10 @@ def register_routes(context):
                         ).get(x, 99))})
 
     async def api_current_file(name):
-        fp = os.path.join(cur(), name)
-        if not os.path.isfile(fp) or not fp.startswith(os.path.abspath(cur())):
+        fp = _safe_path(cur(), name)
+        if not fp or not fp.is_file():
             return Response("file not found", status=404)
-        with open(fp, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = fp.read_text(encoding="utf-8")
         return Response(content[:5000], content_type="text/plain; charset=utf-8")
 
     async def api_archives():
@@ -91,13 +102,12 @@ def register_routes(context):
         return jsonify(items[:50])
 
     async def api_archive_summary(slug):
-        a = arc()
-        fp = os.path.join(a, slug, "00_task_state.json")
-        if not os.path.isfile(fp) or not fp.startswith(os.path.abspath(a)):
+        fp = _safe_path(arc(), slug, "00_task_state.json")
+        if not fp or not fp.is_file():
             return jsonify({"ok": False, "error": "not found"})
         with open(fp, "r", encoding="utf-8") as f:
             st = json.load(f)
-        arc_dir = os.path.join(arc(), slug)
+        arc_dir = _safe_path(arc(), slug)
         actual = [n for n in os.listdir(arc_dir) if os.path.isfile(os.path.join(arc_dir, n))]
         st["files"] = sorted(actual, key=lambda x: (
             {"00_task_state.json": 0, "03_work_order.md": 1, "02_design.md": 2, "01_research.md": 3, "04_note.md": 4, "progress.log": 5}
@@ -105,12 +115,10 @@ def register_routes(context):
         return jsonify(st)
 
     async def api_archive_file(slug, name):
-        a = arc()
-        fp = os.path.join(a, slug, name)
-        if not os.path.isfile(fp) or not fp.startswith(os.path.abspath(a)):
+        fp = _safe_path(arc(), slug, name)
+        if not fp or not fp.is_file():
             return Response("file not found", status=404)
-        with open(fp, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = fp.read_text(encoding="utf-8")
         return Response(content[:5000], content_type="text/plain; charset=utf-8")
 
     async def api_activity():
@@ -152,7 +160,7 @@ def register_routes(context):
         if m not in ("plan", "build"):
             return jsonify({"ok": False, "error": "mode 必须是 plan 或 build"})
         set_mode(m)
-        log_activity("System", "系统", f"模式切换 \u2192 {m}")
+        await log_activity("System", "系统", f"模式切换 \u2192 {m}")
         return jsonify({"ok": True, "mode": m})
 
     _ROUTES = [

@@ -29,7 +29,7 @@ def load_persisted():
     fp = os.path.join(root(), "state", "context.json")
     try:
         if os.path.isfile(fp):
-            with open(fp, "r") as f:
+            with open(fp, "r", encoding="utf-8") as f:
                 d = json.load(f)
             _constants._LAST_CTX_SIZE = d.get("ctx", 0)
             if d.get("limit", 0) > 0:
@@ -44,5 +44,5 @@ def save_persisted():
     fp = os.path.join(root(), "state", "context.json")
     sd = os.path.dirname(fp)
     os.makedirs(sd, exist_ok=True)
-    with open(fp, "w") as f:
-        json.dump({"ctx": _constants._LAST_CTX_SIZE, "limit": _constants._CONTEXT_LIMIT, "provider": _constants._LLM_PROVIDER}, f)
+    with open(fp, "w", encoding="utf-8") as f:
+        json.dump({"ctx": _constants._LAST_CTX_SIZE, "limit": _constants._CONTEXT_LIMIT, "provider": _constants._LLM_PROVIDER}, f, ensure_ascii=False)

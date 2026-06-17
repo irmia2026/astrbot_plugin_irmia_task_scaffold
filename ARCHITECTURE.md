@@ -87,16 +87,17 @@ WebUI toggle → POST /api/mode → _set_mode()
 ```
 
 **核心机制**：`on_llm_request` 中直接修改 `request.functions` 列表，
-通过工具描述关键词匹配（`write`, `edit`, `patch`, `save` 等 40+ 关键词）摘除写工具。
+通过工具描述关键词匹配（`write`, `edit`, `patch`, `modify`, `delete`, `commit`, `push`, `deploy`, `upload`, `publish`, `release`, `merge`, `install`, `uninstall`, `rollback`, `unzip` 等英文关键词 + 中文写入关键词）摘除写工具。
 
 **模式提醒**：每次 LLM 请求时，自动检测工作区方法论文件（01_research/02_design/04_note）是否为空，
 在 user_prompt 中注入针对性提醒：
 - Plan 模式："建议先读取 01_research.md / 02_design.md 了解已有结论"
 - Build 模式："请及时用 safe_edit 编辑方法论文件记录关键结论"
 
-**禁用清单**（关键词匹配）：
-- 英文：`write`, `edit`, `patch`, `save`, `modify`, `create`, `delete`, `execute`, `run`, `commit`, `push`, `deploy`...
-- 中文：`写入`, `编辑`, `修改`, `创建`, `删除`, `执行`, `运行`, `提交`, `推送`...
+**禁用清单**（关键词匹配 + 工具名安全词）：
+- 英文关键词（按单词边界匹配）：`write`, `edit`, `patch`, `modify`, `delete`, `commit`, `push`, `deploy`, `upload`, `publish`, `release`, `merge`, `install`, `uninstall`, `rollback`, `unzip`
+- 中文关键词（子串匹配）：`部署`, `安装`, `删除`, `写入`, `创建`, `修改`, `编辑`, `执行`, `运行`, `下载`, `上传`, `提交`, `推送`, `发布`, `合并`, `卸载`, `回滚`, `解压`, `压缩`, `重启`
+- 工具名安全词（保留读工具）：`read`, `search`, `list`, `get`, `query`, `find`, `show`, `browse`, `preview`, `check`, `fetch`, `dump`, `cat`, `echo`, `lookup`, `print`, `stat`, `describe`, `explain`, `inspect`, `peek`, `view`, `glob`, `grep`, `ls`, `walk`, `scan`, `trace`
 - 强制禁用：`astrbot_execute_shell`, `astrbot_execute_python`
 - 豁免：`task_list`, `task_archive`
 
@@ -180,5 +181,6 @@ AstrBot 自动添加 `/api/plug/` 前缀。
 | 组件 | 间隔 | 方式 |
 |------|------|------|
 | 当前任务面板 | 3s | fetch `/api/current` + JSON 缓存比对 |
-| 实时活动流 | 3s | fetch `/api/activity` + 增量追加 + 去重 |
+| 实时活动流 | 1s | fetch `/api/activity` + 增量追加 + 去重 |
 | Plan/Build 模式 | 3s | fetch `/api/mode` |
+| 归档列表 | 手动/切换视图时 | fetch `/api/archives` |

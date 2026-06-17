@@ -113,7 +113,7 @@ def get_recent_summaries(n=None):
 def get_stats():
     sw = os.path.join(root(), "state", "summary.jsonl")
     total = 0
-    week_done = 0
+    week_completed = 0
     week_start = (datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
                   - timedelta(days=datetime.now().weekday()))
     if os.path.isfile(sw):
@@ -127,9 +127,10 @@ def get_stats():
                             total += 1
                             ts = entry.get("ts", "")
                             if ts >= week_start.isoformat(timespec="seconds"):
-                                week_done += 1
+                                # 统计本周归档中真正完成的 task 数，而不是归档批次
+                                week_completed += entry.get("done", 0)
                         except Exception:
                             pass
         except Exception:
             pass
-    return {"total_archived": total, "this_week": week_done}
+    return {"total_archived": total, "this_week": week_completed}

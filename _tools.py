@@ -52,7 +52,7 @@ class TaskListTool(_FT):
                 if title and todos and title.strip() == todos[0].get("content", "")[:60].strip():
                     return err("title 不能和第一个子任务内容相同，请写简短的概括性标题")
                 slug = gen_slug(workspace_slug or None)
-                fs = init_ws(todos, slug, tags, title, cwd)
+                fs = init_ws(todos, slug, tags, title or f"任务工单 · {slug}", cwd)
                 return ok(todos, summary=summary(todos), workspace="task_scaffolds/current/",
                           files=fs, action="workspace_created", slug=slug)
 
@@ -63,10 +63,7 @@ class TaskListTool(_FT):
                 if e:
                     return err(e)
                 if not active:
-                    slug = gen_slug(workspace_slug or None)
-                    fs = init_ws(todos, slug, cwd=cwd)
-                    return ok(todos, summary=summary(todos), workspace="task_scaffolds/current/",
-                              files=fs, action="workspace_created_implicit", slug=slug)
+                    return err("无活跃任务，无法 update。请先调用 task_list(action='start') 启动任务。")
                 update_state(todos)
                 done = all(t.get("status") in ("completed", "cancelled") for t in todos)
                 if done:
@@ -137,11 +134,16 @@ class TaskArchiveTool(_FT):
             if action == "read":
                 if not slug or not file:
                     return err("read 需要 slug 和 file 参数")
-                fp = os.path.join(a, slug, file)
-                if not os.path.isfile(fp) or not fp.startswith(os.path.abspath(a)):
+                from pathlib import Path
+                base = Path(arc()).resolve()
+                try:
+                    fp = (base / slug / file).resolve()
+                    fp.relative_to(base)
+                except (ValueError, RuntimeError):
                     return err(f"文件不存在: {slug}/{file}")
-                with open(fp, "r", encoding="utf-8") as f:
-                    content = f.read()
+                if not fp.is_file():
+                    return err(f"文件不存在: {slug}/{file}")
+                content = fp.read_text(encoding="utf-8")
                 return json.dumps({"ok": True, "slug": slug, "file": file,
                                    "content": content[:5000],
                                    "truncated": len(content) > 5000}, ensure_ascii=False)
