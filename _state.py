@@ -1,9 +1,102 @@
 """状态读写、校验、工作空间初始化、计数、工具函数。"""
-import json, os
+import json, os, re
 from datetime import datetime
 
 from ._constants import _VS
 from ._paths import root, cur, arc
+
+
+_WS_FILE_LABELS = {
+    "01_research.md": "调研",
+    "02_design.md": "设计",
+    "04_note.md": "备忘",
+}
+
+
+def _display_width(s):
+    """计算字符串在等宽字体中的显示列宽，优先使用 wcwidth，回退到中文 heuristic。"""
+    try:
+        from wcwidth import wcswidth
+        w = wcswidth(s)
+        if w is not None and w >= 0:
+            return w
+    except Exception:
+        pass
+    w = 0
+    for ch in s:
+        o = ord(ch)
+        if o == 0xE or o == 0xF:  # 部分零宽字符
+            continue
+        if 0x4E00 <= o <= 0x9FFF or 0x3400 <= o <= 0x4DBF or 0xF900 <= o <= 0xFAFF:
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def _pad_to(s, width):
+    """用空格填充至指定显示宽度。"""
+    sw = _display_width(s)
+    pad = max(0, width - sw)
+    return s + " " * pad
+
+
+def _summarize_ws_file(content: str, max_chars: int = 240):
+    """从方法论文件中提取非空、非模板提示的摘要。"""
+    if not content:
+        return ""
+    useful = []
+    for line in content.split("\n"):
+        s = line.strip()
+        if not s or s.startswith(">") or s.startswith("#"):
+            continue
+        useful.append(s)
+    if not useful:
+        return ""
+    text = " | ".join(useful[:8])
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit(" ", 1)[0] + "…"
+    return text
+
+
+def _read_ws_summaries(max_chars_per_file: int = None):
+    """读取当前工作区方法论文件摘要，用于注入 prompt。"""
+    if max_chars_per_file is None:
+        from ._config import get as cfg_get
+        max_chars_per_file = cfg_get("ws_summary_max_chars", 240)
+    cr = cur()
+    summaries = {}
+    for fn, label in _WS_FILE_LABELS.items():
+        fp = os.path.join(cr, fn)
+        if not os.path.isfile(fp):
+            continue
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                content = f.read()
+            summary = _summarize_ws_file(content, max_chars_per_file)
+            if summary:
+                summaries[label] = summary
+        except Exception:
+            pass
+    return summaries
+
+
+def _read_ws_files():
+    """同步读取工作区方法论文件状态。"""
+    cr = cur()
+    empty_files = []
+    for fn, label in _WS_FILE_LABELS.items():
+        fp = os.path.join(cr, fn)
+        if os.path.isfile(fp):
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                lines = [l.strip() for l in content.split("\n") if l.strip() and not l.strip().startswith(">")]
+                if len(lines) <= 3:
+                    empty_files.append(label)
+            except Exception:
+                pass
+    return empty_files
 
 
 def is_active():

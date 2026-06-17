@@ -16,6 +16,7 @@ tokens_max_lines: 500         # tokens.jsonl 最大行数
 # ---- 行为 ----
 recent_summary_count: 5       # status 空闲时返回的最近归档数
 archive_list_limit: 50        # 归档列表每页最大条目数
+ws_summary_max_chars: 240     # 自动注入 prompt 时每个工作区文件摘要最大字符数
 
 # ---- 扩展 ----
 # extra_write_keywords: []    # 额外的写工具关键词（追加到内置列表）

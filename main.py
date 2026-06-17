@@ -10,31 +10,12 @@ from astrbot.core.agent.message import TextPart
 from . import _constants
 from ._paths import root, cur, load_persisted, save_persisted
 from ._mode import get_mode
-from ._state import is_active
+from ._state import is_active, _read_ws_files, _read_ws_summaries
 from ._archive import do_archive
 from ._tokens import record_usage
 from ._tools import TaskListTool, TaskArchiveTool
 from ._routes import register_routes
 from ._activity import log as log_activity, clear_activity
-
-
-def _read_ws_files():
-    """同步读取工作区方法论文件状态（后续可考虑异步化）。"""
-    cr = cur()
-    empty_files = []
-    for fn, label in [("01_research.md", "调研"), ("02_design.md", "设计"), ("04_note.md", "备忘")]:
-        fp = os.path.join(cr, fn)
-        if os.path.isfile(fp):
-            try:
-                with open(fp, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                # 检查是否还是空模板
-                lines = [l.strip() for l in content.split("\n") if l.strip() and not l.strip().startswith(">")]
-                if len(lines) <= 3:
-                    empty_files.append(label)
-            except Exception:
-                pass
-    return empty_files
 
 
 class Main(star.Star):
@@ -111,20 +92,21 @@ class Main(star.Star):
         if name in ("task_list", "task_archive"):
             logger.debug(f"[_on_tool_done] skip exempt tool {name}")
             return
-        # 仅对明确成功的工具响应推进任务进度
+        # 无活跃任务时不推进，避免读取不存在的状态文件
+        if not is_active():
+            logger.debug("[_on_tool_done] no active task, skip")
+            return
+        # 仅对明确失败的工具响应跳过推进
         failed = False
         fail_reason = ""
-        if tool_result is None:
-            failed = True
-            fail_reason = "result is None (no explicit success)"
-        elif isinstance(tool_result, Exception):
+        if isinstance(tool_result, Exception):
             failed = True
             fail_reason = f"result is Exception: {tool_result}"
         elif isinstance(tool_result, dict):
             failed = not tool_result.get("ok", True)
             if failed:
                 fail_reason = f"dict ok={tool_result.get('ok')}"
-        else:
+        elif tool_result is not None:
             tr_text = str(tool_result)
             lowered = tr_text.lower()
             if ("failed" in lowered or "traceback" in lowered or
@@ -132,6 +114,7 @@ class Main(star.Star):
                 "error:" in lowered or "exception:" in lowered):
                 failed = True
                 fail_reason = f"matched fail keyword in text: {tr_text[:80]}"
+        # None 视为成功（工具无返回值但调用未抛异常）
         if failed:
             logger.info(f"[_on_tool_done] skip advance for {name}: {fail_reason}")
             return
@@ -223,7 +206,16 @@ class Main(star.Star):
             if not _constants._AGENT_NAME:
                 _constants._AGENT_NAME = "Agent"
         mode = get_mode()
-        
+
+        # 上下文使用监控：超过阈值时注入告警，提示 LLM 注意上下文预算
+        ctx_hint = ""
+        if _constants._CONTEXT_LIMIT > 0 and _constants._LAST_CTX_SIZE > 0:
+            pct = _constants._LAST_CTX_SIZE / _constants._CONTEXT_LIMIT
+            if pct >= 0.85:
+                ctx_hint = f"\n【上下文告警】当前上下文已使用 {int(pct*100)}%（{_constants._LAST_CTX_SIZE}/{_constants._CONTEXT_LIMIT} tokens），请优先读取工作区文件摘要，避免重复长篇输出。"
+            elif pct >= 0.7:
+                ctx_hint = f"\n【上下文提示】当前上下文已使用 {int(pct*100)}%，建议开始收尾或生成摘要。"
+
         # 检查工作区方法论文件状态，用于提醒
         ws_hint = ""
         if is_active():
@@ -238,9 +230,19 @@ class Main(star.Star):
             parts = getattr(request, 'extra_user_content_parts', None)
             if parts is not None:
                 try:
-                    hint = "\n[Build 模式] 所有工具可用。若已有活跃长任务，使用 update 更新进度，切勿重复 start。"
+                    hint = "\n[Build 模式] 复杂任务用 task_list start/update；勿重复 start。"
                     if ws_hint:
-                        hint += ws_hint + "请在执行调研/设计/发现关键信息时，及时用 safe_edit 编辑 01_research.md / 02_design.md / 04_note.md 记录结论。"
+                        hint += ws_hint + "请用 safe_edit 编辑 01_research/02_design/04_note 记录结论。"
+                    if is_active():
+                        try:
+                            summaries = await asyncio.to_thread(_read_ws_summaries)
+                            if summaries:
+                                hint += "\n【已记录摘要】"
+                                for label, s in summaries.items():
+                                    hint += f" {label}: {s}"
+                        except Exception:
+                            pass
+                    hint += ctx_hint
                     part = TextPart(text=hint)
                     part.mark_as_temp()
                     parts.append(part)
@@ -299,16 +301,21 @@ class Main(star.Star):
         if parts is not None:
             try:
                 plan_hint = (
-                    "\n[Plan 模式] 写操作与命令执行类工具已禁用，只能阅读和分析。"
-                    "如需写入请告知用户切换到 Build。"
+                    "\n[Plan 模式] 写工具已禁用，只能阅读分析；需写入请切 Build。"
                 )
                 if is_active():
-                    plan_hint += (
-                        "\n当前有活跃长任务，建议先读取 01_research.md / 02_design.md / 04_note.md "
-                        "了解已记录的调研结论和设计决策，避免重复工作。"
-                    )
+                    plan_hint += "\n当前有活跃任务，建议先读 01_research/02_design/04_note。"
+                    try:
+                        summaries = await asyncio.to_thread(_read_ws_summaries)
+                        if summaries:
+                            plan_hint += "\n【已记录摘要】"
+                            for label, s in summaries.items():
+                                plan_hint += f" {label}: {s}"
+                    except Exception:
+                        pass
                 if ws_hint:
                     plan_hint += ws_hint
+                plan_hint += ctx_hint
                 part = TextPart(text=plan_hint)
                 part.mark_as_temp()
                 parts.append(part)

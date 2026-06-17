@@ -184,6 +184,33 @@ def test_update_state_no_implicit_workspace():
     shutil.rmtree(tmp, ignore_errors=True)
     print("  update_state no implicit workspace OK")
 
+
+def test_ws_summaries():
+    from astrbot_plugin_irmia_task_scaffold._state import _summarize_ws_file, _read_ws_summaries
+    from astrbot_plugin_irmia_task_scaffold._paths import root, cur, set_root
+    tmp = tempfile.mkdtemp()
+    original = root()
+    set_root(tmp)
+    os.makedirs(cur(), exist_ok=True)
+    # 空文件应无摘要
+    assert _summarize_ws_file("# 标题\n> 提示\n") == ""
+    # 有实质内容
+    content = "# 调研\n\n- 结论 A\n- 结论 B\n"
+    assert "结论 A" in _summarize_ws_file(content)
+    # 写入测试文件
+    with open(os.path.join(cur(), "01_research.md"), "w", encoding="utf-8") as f:
+        f.write(content)
+    with open(os.path.join(cur(), "02_design.md"), "w", encoding="utf-8") as f:
+        f.write("# 设计\n> 提示\n")  # 只有模板提示，无实质内容
+    summaries = _read_ws_summaries(max_chars_per_file=80)
+    assert "调研" in summaries
+    assert "结论 A" in summaries["调研"]
+    assert "设计" not in summaries
+    # 恢复
+    set_root(original)
+    shutil.rmtree(tmp, ignore_errors=True)
+    print("  ws summaries OK")
+
 # Test templates
 def test_templates():
     from astrbot_plugin_irmia_task_scaffold._templates import load_template, list_templates
@@ -293,6 +320,7 @@ if __name__ == "__main__":
     test_workorder_width()
     test_token_stats_cached()
     test_update_state_no_implicit_workspace()
+    test_ws_summaries()
     test_templates()
     test_templates_content()
     test_plan_filter()

@@ -15,6 +15,7 @@ _DEFAULTS = {
     "tokens_max_lines": 500,
     "recent_summary_count": 5,
     "archive_list_limit": 50,
+    "ws_summary_max_chars": 240,
     "extra_write_keywords": [],
     "extra_exempt_tools": [],
 }
