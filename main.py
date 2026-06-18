@@ -125,13 +125,18 @@ class Main(star.Star):
             if failed:
                 fail_reason = f"dict ok={tool_result.get('ok')}"
         elif tool_result is not None:
-            tr_text = _extract_result_text(tool_result)
-            lowered = tr_text.lower()
-            if ("failed" in lowered or "traceback" in lowered or
-                "错误:" in tr_text or "失败:" in tr_text or
-                "error:" in lowered or "exception:" in lowered):
+            # mcp.types.CallToolResult 显式标记错误
+            if getattr(tool_result, "isError", False):
                 failed = True
-                fail_reason = f"matched fail keyword in text: {tr_text[:120]}"
+                fail_reason = "CallToolResult.isError=True"
+            else:
+                tr_text = _extract_result_text(tool_result)
+                lowered = tr_text.lower()
+                if ("failed" in lowered or "traceback" in lowered or
+                    "错误:" in tr_text or "失败:" in tr_text or
+                    "error:" in lowered or "exception:" in lowered):
+                    failed = True
+                    fail_reason = f"matched fail keyword in text: {tr_text[:120]}"
         # None 视为成功（工具无返回值但调用未抛异常）
         if failed:
             logger.info(f"[_on_tool_done] skip advance for {name}: {fail_reason}")
