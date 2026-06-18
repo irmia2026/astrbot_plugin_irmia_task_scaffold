@@ -48,7 +48,7 @@ class Main(star.Star):
 
     @filter.on_llm_response()
     async def _on_response(self, event: AstrMessageEvent, resp):
-        text = str(resp.message) if hasattr(resp, 'message') else str(resp)
+        text = resp.completion_text if hasattr(resp, 'completion_text') else str(resp)
         preview = text[:30].replace("\n", " ") if text else ""
         await log_activity(_constants._AGENT_NAME, "回复中", f"回复{' · ' + preview if preview else '…'}")
         usage = getattr(resp, 'usage', None)
@@ -99,6 +99,24 @@ class Main(star.Star):
         # 仅对明确失败的工具响应跳过推进
         failed = False
         fail_reason = ""
+
+        def _extract_result_text(r):
+            """从 AstrBot 的 CallToolResult 或原始返回值中提取可读的文本。"""
+            if r is None:
+                return ""
+            if isinstance(r, Exception):
+                return str(r)
+            if isinstance(r, dict):
+                return json.dumps(r, ensure_ascii=False)
+            # 处理 mcp.types.CallToolResult
+            if hasattr(r, "content") and isinstance(r.content, list):
+                parts = []
+                for c in r.content:
+                    if hasattr(c, "text"):
+                        parts.append(c.text)
+                return "\n".join(parts)
+            return str(r)
+
         if isinstance(tool_result, Exception):
             failed = True
             fail_reason = f"result is Exception: {tool_result}"
@@ -107,13 +125,13 @@ class Main(star.Star):
             if failed:
                 fail_reason = f"dict ok={tool_result.get('ok')}"
         elif tool_result is not None:
-            tr_text = str(tool_result)
+            tr_text = _extract_result_text(tool_result)
             lowered = tr_text.lower()
             if ("failed" in lowered or "traceback" in lowered or
                 "错误:" in tr_text or "失败:" in tr_text or
                 "error:" in lowered or "exception:" in lowered):
                 failed = True
-                fail_reason = f"matched fail keyword in text: {tr_text[:80]}"
+                fail_reason = f"matched fail keyword in text: {tr_text[:120]}"
         # None 视为成功（工具无返回值但调用未抛异常）
         if failed:
             logger.info(f"[_on_tool_done] skip advance for {name}: {fail_reason}")
@@ -289,11 +307,8 @@ class Main(star.Star):
                 keep.append(f)
             if removed:
                 try:
-                    if hasattr(request, 'functions'):
-                        request.functions = keep
-                    if hasattr(request, 'tools'):
-                        request.tools = keep
-                    # 不再调用 func_tool.remove_tool，避免全局卸载工具后 Build 模式无法恢复
+                    # 直接修改 ToolSet 内部列表，仅影响本次请求
+                    funcs.tools = keep
                 except Exception:
                     pass
                 logger.info(f"plan 模式屏蔽 {len(removed)} 个写工具: {removed[:8]}{'...' if len(removed)>8 else ''}")
@@ -329,6 +344,15 @@ class Main(star.Star):
         note = "\n\n[系统] 当前处于 plan（只读）模式，写工具已禁用。需要执行写入操作请在 WebUI 切换为 Build。"
         try:
             result = event.get_result()
-            event.set_result(result + note)
+            if result is None:
+                event.set_result(note)
+            else:
+                text = ""
+                if result.chain:
+                    try:
+                        text = result.chain.get_plain_text()
+                    except Exception:
+                        pass
+                event.set_result(text + note)
         except Exception as e:
             logger.debug(f"注入 plan 提示失败: {e}")

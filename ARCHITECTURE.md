@@ -32,7 +32,7 @@ dashboard.html render
 LLM 下一轮请求
        ↓
 register_on_llm_request() ──→ 检查 _get_mode()
-                              plan → 从 request.functions 摘除写工具
+                              plan → 从 request.func_tool.tools 摘除写工具
                                    → user_prompt 注入提示
 ```
 
@@ -86,7 +86,7 @@ WebUI toggle → POST /api/mode → _set_mode()
               → 注入 user_prompt 提示（含工作区文件状态）
 ```
 
-**核心机制**：`on_llm_request` 中直接修改 `request.functions` 列表，
+**核心机制**：`on_llm_request` 中直接修改 `request.func_tool.tools` 列表，
 通过工具描述关键词匹配（`write`, `edit`, `patch`, `modify`, `delete`, `commit`, `push`, `deploy`, `upload`, `publish`, `release`, `merge`, `install`, `uninstall`, `rollback`, `unzip` 等英文关键词 + 中文写入关键词）摘除写工具。
 
 **模式提醒**：每次 LLM 请求时，自动检测工作区方法论文件（01_research/02_design/04_note）是否为空，
