@@ -324,9 +324,8 @@ function toggleTheme(){
 async function checkOnline(){
   const dot=document.querySelector('.nav-status .sdot');
   const txt=document.getElementById('nav-status-text');
-  try{const r=await fetch(API+'/ping');
-    if(r.ok){dot.classList.remove('off');if(txt)txt.textContent='AstrBot 在线'}
-    else{dot.classList.add('off');if(txt)txt.textContent='AstrBot 离线'}
+  try{await _apiGet('/ping');
+    dot.classList.remove('off');if(txt)txt.textContent='AstrBot 在线';
   }catch(e){dot.classList.add('off');if(txt)txt.textContent='AstrBot 离线'}
 }
 let ST={current:null,archives:[],archiveTotal:0,archiveOffset:0,archiveLimit:20,activeCat:'all',fold:'month',collapsed:{},files:{},_cacheAct:'',_cacheCur:'',_lastActive:null},_rendered=new Set();
@@ -338,15 +337,10 @@ async function get(path){
     if(path==='/activity')return E.activity||[];
     return{};
   }
-  try{
-    const r=await fetch(API+path);
-    if(!r.ok){console.warn('API '+path+' → '+r.status);return path==='/current'?{active:!1}:path==='/activity'||path==='/archives'?[]:null;}
-    const t=await r.text();
-    try{return JSON.parse(t);}
-    catch(e){console.warn('JSON parse failed '+path,t.slice(0,60));return path==='/current'?{active:!1}:path==='/activity'||path==='/archives'?[]:null;}
-  }catch(e){console.warn('Fetch '+path,e);return path==='/current'?{active:!1}:path==='/activity'||path==='/archives'?[]:null;}
+  try{return await _apiGet(path);}
+  catch(e){console.warn('API '+path,e);return path==='/current'?{active:!1}:path==='/activity'||path==='/archives'?[]:null;}
 }
-async function getText(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '(离线)';try{const r=await fetch(API+path);return r.text();}catch(e){return '(无法加载)'};}
+async function getText(path){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '(离线)';try{return await _apiGetText(path);}catch(e){return '(无法加载)';}}
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;}
 function ts(){if(typeof E!=='undefined'&&API==='__EMBEDDED__')return '离线快照';const t=new Date();return t.toTimeString().slice(0,8);}
 
@@ -675,17 +669,17 @@ async function loadActivity(){
 }
 
 async function loadMode(){
-  try{const r=await fetch(API+'/mode');const m=await r.json();applyMode(m.mode||'build');}catch(e){}
+  try{const m=await _apiGet('/mode');applyMode(m.mode||'build');}catch(e){}
 }
 
 async function loadStats(){
-  try{const r=await fetch(API+'/stats');const s=await r.json();
+  try{const s=await _apiGet('/stats');
     document.getElementById('stats-bar').textContent=s.total_archived+' 归档 · 本周 '+s.this_week;
   }catch(e){}
 }
 
 async function loadStatus(){
-  try{const r=await fetch(API+'/status');const s=await r.json();
+  try{const s=await _apiGet('/status');
     document.getElementById('st-provider').textContent=s.provider||'—';
     const t=s.tokens||{};
     function fmt(n){return n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':String(n)}
@@ -707,7 +701,7 @@ function applyMode(m){
 
 async function toggleMode(){
   const m=ST._mode==='plan'?'build':'plan';
-  try{await fetch(API+'/mode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})});applyMode(m);}catch(e){}
+  try{await _apiPost('/mode',{mode:m});applyMode(m);}catch(e){}
 }
 
 setInterval(()=>{

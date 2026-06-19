@@ -1,100 +1,119 @@
 # irmia_task_scaffold
 
-为 LLM Agent 提供**方法论文本工作空间**，解决多步骤任务中上下文窗口驱逐导致的"忘记要干什么"问题。
+AstrBot 插件：给 LLM Agent 搭一个**文本工作区**，把多步骤任务的状态、调研、设计、备忘落到文件里，降低上下文被挤掉后“忘记在干什么”的概率。
 
-## 核心功能
+## 它能做什么
 
-| 功能 | 说明 |
+| 能力 | 说明 |
 |------|------|
-| `task_list` 工具 | 全量覆写任务状态（start/update/complete/status），持久化到 `00_task_state.json` |
-| 工作空间脚手架 | 首次调用自动生成方法论文件：`01_research.md`（调研）/ `02_design.md`（设计）/ `04_note.md`（备忘）/ `03_work_order.md`（工单）/ `progress.log`（日志） |
-| 方法论文件引导 | 模板自带"使用时机"提示；Plan 模式提醒先读已有记录；Build 模式提醒及时写入 |
-| 自动进度追踪 | `on_llm_tool_respond` 钩子自动逐项完成 todo + 提取 CWD |
-| 自动归档 | 全部完成 → 自动移动到 `archive/<slug>/` |
-| `task_archive` 工具 | list/read/search 已归档任务，LLM 按需召回历史 |
-| Plan/Build 双模式 | Plan 模式全局屏蔽写工具（`on_llm_request` 过滤 function list），Build 恢复 |
-| WebUI 仪表盘 | 三栏布局：当前长任务/实时活动流/文件浏览器（含用途标签+空文件提示）/归档面板 + Plan/Build 滑动胶囊 + 年/月/周/日折叠 |
-| `summary` 字段 | 自然语言进度描述 + 下一步提示 |
+| `task_list` | 启动 / 更新 / 查询 / 完成任务列表，状态写入 `00_task_state.json` |
+| 工作区文件 | 自动生成 `01_research.md`、`02_design.md`、`04_note.md`，LLM 可在对应阶段写入 |
+| 自动推进 | 普通工具执行成功后，自动把当前 `in_progress` 标记为 `completed` 并开启下一项 |
+| 自动归档 | 全部 todo 完成时，自动把 `current/` 移动到 `archive/<slug>/` |
+| `task_archive` | LLM 按需搜索 / 读取历史归档 |
+| Plan/Build 模式 | Plan 模式从本次请求中移除写工具；Build 模式恢复 |
+| WebUI 仪表盘 | 当前任务、实时活动、工作区文件、归档管理 |
+| 上下文监控 | 记录 token 使用量，接近上下文上限时提示 LLM 收尾 |
 
 ## 安装
 
-将 `astrbot_plugin_irmia_task_scaffold/` 目录放入 AstrBot 的 `plugins/` 目录，重启即可。
+把本仓库放到 AstrBot 的 `plugins/` 目录下，重启 AstrBot：
 
 ```bash
 git clone https://github.com/irmia2026/irmia_task_scaffold.git plugins/astrbot_plugin_irmia_task_scaffold
 ```
 
-## 工作空间结构
+## 工作区结构
 
 ```
-{home}/.astrbot/data/task_scaffolds/
-├── current/                       ← 当前活跃工作空间
-│   ├── 00_task_state.json         ← 任务进度 + 元数据（每次覆写）
-│   ├── 01_research.md             ← 调研笔记（LLM 主动填充：参考来源、技术对比、选型决策）
-│   ├── 02_design.md               ← 设计文档（LLM 主动填充：架构决策、接口定义、数据流）
-│   ├── 03_work_order.md           ← 自动生成的工单骨架
-│   ├── 04_note.md                 ← 备忘（LLM 主动填充：关键发现、bug根因、workaround）
-│   └── progress.log               ← ISO 时间戳事件日志
-├── archive/
-│   └── 2026-05-31_REV-008/        ← 已完成工作空间归档
+~/.astrbot/data/task_scaffolds/
+├── current/                    # 当前活跃工作区
+│   ├── 00_task_state.json      # 任务进度 + 元数据
+│   ├── 01_research.md          # 调研笔记（LLM 手动写入）
+│   ├── 02_design.md            # 设计文档（LLM 手动写入）
+│   ├── 03_work_order.md        # 自动生成的工单
+│   ├── 04_note.md              # 备忘（LLM 手动写入）
+│   └── progress.log            # 事件日志
+├── archive/                    # 已归档工作区
+│   └── 2026-05-31_REV-008/
 └── state/
-    ├── mode.json                  ← Plan/Build 模式状态
-    └── activity.jsonl             ← 实时活动流
+    ├── mode.json               # Plan/Build 模式
+    ├── activity.jsonl          # 实时活动流
+    └── summary.jsonl           # 会话级统计
 ```
 
-## 工具使用
-
-### task_list
+## 工具示例
 
 ```python
-# 启动任务
-task_list(action="start", todos=[
-  {"content": "调研 Markdown 渲染方案", "status": "pending", "priority": "high"},
-  {"content": "设计插件架构", "status": "pending", "priority": "high"},
-], title="文档渲染调研", cwd="D:/project")
+# 启动一个长任务
+task_list(
+    action="start",
+    title="路径穿越修复",
+    cwd="D:/opencode/myproj",
+    todos=[
+        {"content": "审计所有用户输入路径", "status": "in_progress", "priority": "high"},
+        {"content": "增加 safe_name 白名单校验", "status": "pending", "priority": "high"},
+        {"content": "补充单元测试", "status": "pending", "priority": "medium"},
+    ],
+)
 
-# 更新进度（也可不调——钩子自动完成）
+# 后续普通工具执行成功会自动推进；也可手动更新
 task_list(action="update", todos=[...])
 
-# 查询状态
+# 查询当前状态
 task_list(action="status")
 
-# 生成汇报
-task_list(action="complete")
-```
-
-### task_archive
-
-```python
-# 列出最近归档
+# 全部完成（或钩子自动完成）后归档
 task_archive(action="list")
-# 搜索
 task_archive(action="search", keyword="路径穿越")
-# 读取
 task_archive(action="read", slug="2026-05-31_REV-008", file="03_work_order.md")
 ```
 
-## Plan/Build 模式
+## Plan / Build 模式
 
-| 模式 | 行为 |
-|------|------|
-| Plan | `on_llm_request` 从 function list 中摘除写工具，LLM 看不到写工具。system_prompt 提示用户切换 |
-| Build | 全部工具可用 |
+- **Plan**：只保留读工具，LLM 只能分析、搜索、查看，不能写入。适合先读代码再动手。
+- **Build**：全部工具可用，正常执行。
 
-WebUI 任务面板右下角滑动胶囊切换。
+切换方式：WebUI 右上角滑动胶囊；或手动改 `state/mode.json`。
 
-## WebUI
+## WebUI 仪表盘
 
-浏览器打开 `http://localhost:6185/api/plug/task_scaffold/dashboard`
+AstrBot Dashboard 侧边栏会出现插件页入口：**弥亚长任务系统**。点击即可打开。
 
-- **左栏**：导航（当前长任务 / 归档 / 标签分类）+ AstrBot 在线状态
-- **中栏上**：当前工作目录横条 + 任务面板（进度圈 / todo 列表 / Plan-Build 胶囊）
-- **中栏下**：实时活动流（增量追加 + 去重 + 滑入动画）
-- **右栏**：工作区文件浏览器 + 文件内容预览
-- **归档面板**：年/月/周/日折叠 / 标签筛选 / 全文搜索 / 分页加载 / 点击展开详情
+也支持直接访问：
+
+```
+http://localhost:6185/api/plug/task_scaffold/dashboard
+```
+
+页面包含：
+
+- 当前任务面板：进度、todo 列表、Plan/Build 切换
+- 实时活动流：工具调用与 LLM 回复
+- 工作区文件：快速预览 / 用途标签
+- 归档面板：年/月/周/日折叠、标签筛选、全文搜索、分页加载
+
+## 配置
+
+`config.yaml` 放在 `~/.astrbot/data/task_scaffolds/config.yaml`：
+
+```yaml
+# data_root: "~/.astrbot/data/task_scaffolds"  # 数据根目录
+context_limit: 200000          # 上下文上限（首次响应后自动从 provider 读取真实值）
+archive_list_limit: 50         # 归档每页最大条目
+ws_summary_max_chars: 240      # 注入 prompt 的工作区文件摘要长度
+activity_max_lines: 200
+summary_max_lines: 100
+tokens_max_lines: 500
+recent_summary_count: 5
+```
 
 ## 依赖
 
-纯标准库（`json` + `os` + `shutil` + `datetime` + `threading` + `tkinter`）。
+纯 Python 标准库。AstrBot 已自带 `quart`。
 
-可选：`quart`（AstrBot 自带）。
+## 已知限制
+
+- 自动推进只认 `in_progress` → `completed` 的状态跃迁；如果一个工具失败，不会推进。
+- Plan 模式靠工具名 / 描述关键词过滤，可能有漏网或误伤，必要时把工具名加入 `extra_exempt_tools` 或 `extra_write_keywords`。
+- 工作区文件摘要仅在 Build 模式下注入 prompt，Plan 模式下只提醒读取。

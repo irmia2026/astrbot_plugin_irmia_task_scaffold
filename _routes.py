@@ -14,7 +14,7 @@ _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def _load_dashboard():
-    fp = os.path.join(_PLUGIN_DIR, "templates", "dashboard.html")
+    fp = os.path.join(_PLUGIN_DIR, "pages", "dashboard", "index.html")
     with open(fp, "r", encoding="utf-8") as f:
         return f.read()
 
