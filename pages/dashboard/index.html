@@ -305,6 +305,52 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
 
 <script>
 var API='/api/plug/task_scaffold/api';
+const _BRIDGE_API_PREFIX='/api/plug/task_scaffold/api';
+let _bridge=null,_bridgeReady=false;
+async function _initBridge(){
+  if(typeof window.AstrBotPluginPage==='undefined')return;
+  try{
+    await Promise.race([window.AstrBotPluginPage.ready(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('timeout')),800))]);
+    _bridge=window.AstrBotPluginPage;
+    _bridgeReady=true;
+    console.log('[task_scaffold] AstrBot plugin bridge ready');
+  }catch(e){console.log('[task_scaffold] bridge not available, using direct fetch');}
+}
+async function _apiGet(path){
+  if(_bridgeReady&&_bridge){
+    try{
+      const data=await _bridge.apiGet(_BRIDGE_API_PREFIX+path);
+      if(typeof data==='string'){try{return JSON.parse(data);}catch(err){return data;}}
+      return data;
+    }catch(e){console.warn('[task_scaffold] bridge GET failed, fallback',e);}
+  }
+  const r=await fetch(API+path);
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const text=await r.text();
+  try{return JSON.parse(text);}catch(e){return text;}
+}
+async function _apiGetText(path){
+  if(_bridgeReady&&_bridge){
+    try{
+      const data=await _bridge.apiGet(_BRIDGE_API_PREFIX+path);
+      return typeof data==='string'?data:JSON.stringify(data);
+    }catch(e){console.warn('[task_scaffold] bridge GET text failed, fallback',e);}
+  }
+  const r=await fetch(API+path);
+  if(!r.ok)return '(无法加载)';
+  return r.text();
+}
+async function _apiPost(path,body){
+  if(_bridgeReady&&_bridge){
+    try{return await _bridge.apiPost(_BRIDGE_API_PREFIX+path,body);}
+    catch(e){console.warn('[task_scaffold] bridge POST failed, fallback',e);}
+  }
+  const r=await fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const text=await r.text();
+  try{return JSON.parse(text);}catch(e){return text;}
+}
+_initBridge();
 (function(){
   let t=localStorage.getItem('task_scaffold_theme')||'light';
   if(t==='dark')document.documentElement.setAttribute('data-theme','dark');
